@@ -1,0 +1,264 @@
+/* Message action rows */
+
+.user-message-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+  margin-bottom: 24px;
+}
+
+.user-message-row > .message-bubble {
+  margin-bottom: 0;
+}
+
+.message-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 29px;
+  color: #93939e;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.user-message-actions {
+  justify-content: flex-end;
+  margin: 5px 4px -5px 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.user-message-row:hover > .user-message-actions,
+.user-message-row:focus-within > .user-message-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.assistant-message-actions {
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+
+.message-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  padding: 6px;
+  border: 0;
+  border-radius: 7px;
+  color: #93939e;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 130ms ease,
+    background 130ms ease;
+}
+
+.message-action-button:hover,
+.message-action-button:focus-visible {
+  color: #34343d;
+  background: #ededf2;
+}
+
+.message-action-button[aria-pressed="true"],
+.message-action-button.is-copied {
+  color: #24242f;
+  background: #eaeaf0;
+}
+
+.message-action-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.message-action-button > svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.message-timestamp {
+  margin-inline: 6px;
+  color: #a2a2ac;
+  font-size: 10px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.assistant-message-actions .message-timestamp {
+  margin-left: 10px;
+}
+
+.message-action-status {
+  width: 100%;
+  margin: 5px 0;
+  color: #8b8b98;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* Inline message editing */
+
+.user-message-row.is-editing {
+  align-items: stretch;
+}
+
+.message-edit-panel {
+  width: min(100%, 680px);
+  margin-left: auto;
+  padding: 16px;
+  border: 1px solid #e4e4eb;
+  border-radius: 19px;
+  background: #f2f2f6;
+}
+
+.message-edit-input {
+  display: block;
+  width: 100%;
+  min-height: 85px;
+  max-height: 320px;
+  padding: 0;
+  resize: vertical;
+  outline: none;
+  border: 0;
+  box-shadow: none;
+  color: #282832;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.message-edit-input:focus,
+.message-edit-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.message-edit-cancel,
+.message-edit-save {
+  min-height: 33px;
+  padding: 7px 13px;
+  border: 1px solid #e2e2e9;
+  border-radius: 18px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.message-edit-cancel {
+  color: #64646e;
+  background: #fff;
+}
+
+.message-edit-save {
+  border-color: var(--navy, #070825);
+  color: #fff;
+  background: var(--navy, #070825);
+}
+
+.message-edit-cancel:disabled,
+.message-edit-save:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.message-edit-error {
+  margin-top: 9px;
+  color: #c14949;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.message-edit-consequence {
+  margin-top: 12px;
+  color: #8e8e99;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.message-edit-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.message-edit-files > span {
+  max-width: 220px;
+  padding: 4px 8px;
+  overflow: hidden;
+  border: 1px solid #e0e0e8;
+  border-radius: 6px;
+  color: #7f7f8a;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-copy-buffer {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+@media (hover: none) {
+  .user-message-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .message-actions-bar {
+    gap: 1px;
+  }
+  .message-action-button {
+    width: 27px;
+    height: 27px;
+    flex-basis: 27px;
+    padding: 6px;
+  }
+  .message-timestamp {
+    font-size: 9px;
+  }
+  .message-edit-panel {
+    padding: 12px;
+  }
+  .message-edit-input {
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-message-actions,
+  .message-action-button {
+    transition: none;
+    transform: none;
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Orbit",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/dev.mjs",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "Local: (http://127\\.0\\.0\\.1:[0-9]+/)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      },
+      "runtimeExecutable": "node",
+      "env": {
+        "Path": "${env:Path};${env:USERPROFILE}\\AppData\\Local\\Programs\\ai-agent-node\\node-v24.22.1-win-x64;${env:USERPROFILE}\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin"
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.wordWrap": "on",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "files.eol": "\n",
+  "terminal.integrated.env.windows": {
+    "Path": "${env:Path};${env:USERPROFILE}\\AppData\\Local\\Programs\\ai-agent-node\\node-v24.22.1-win-x64;${env:USERPROFILE}\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin"
+  },
+  "search.exclude": {
+    "**/generated": true,
+    "**/dist": true
+  }
+}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orbit Current Tab</title>
+    <link rel="stylesheet" href="popup.css" />
+    <script src="popup.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <span class="cat" aria-hidden="true"><i></i><i></i></span
+      ><strong>Orbit</strong>
+    </header>
+    <h1>Current tab, connected.</h1>
+    <p class="description">
+      Only visible text from your active, focused Chrome tab is sent to your
+      paired Orbit workspace.
+    </p>
+
+    <form id="pair-form">
+      <label for="pair-code">Pairing code from Orbit</label>
+      <input
+        id="pair-code"
+        type="text"
+        placeholder="4310-12345678"
+        autocomplete="off"
+        required
+        spellcheck="false"
+        maxlength="14"
+      />
+      <button class="primary" type="submit">Connect to Orbit</button>
+    </form>
+
+    <section id="connected" hidden>
+      <div class="status">
+        <i id="status-dot"></i><span id="connection-status"></span>
+      </div>
+      <button class="primary" id="pause-button" type="button">
+        Pause reading
+      </button>
+      <button class="secondary" id="disconnect-button" type="button">
+        Disconnect
+      </button>
+    </section>
+
+    <p class="error" id="error" role="alert" hidden></p>
+    <p class="note">
+      No screenshots, passwords, form inputs, background tabs, or private
+      browsing.
+    </p>
+  </body>
+</html>

@@ -1,0 +1,70 @@
+{
+  "description": "Local brand marks and font sources",
+  "iconLicense": "MIT — LobeHub; brand marks belong to their respective owners",
+  "fontLicense": "SIL Open Font License 1.1 — Inter",
+  "sources": [
+    {
+      "file": "icons/openai.svg",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/openai.svg",
+      "variant": "mono",
+      "adaptation": "currentColor replaced with #FFFFFF for external image rendering",
+      "sha256": "9ac23fbd7f63f849b5df905cc12b9e8fd7b6db97e018c8216ea0494562e342ba"
+    },
+    {
+      "file": "icons/claude.svg",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/claude.svg",
+      "variant": "mono",
+      "adaptation": "currentColor replaced with #FFFFFF for external image rendering",
+      "sha256": "a7fc0fd8d05506caeca075d018a3503403cc729b9626529a078df1d90d22c152"
+    },
+    {
+      "file": "icons/gemini.svg",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/gemini-color.svg",
+      "variant": "color",
+      "adaptation": null,
+      "sha256": "8ab0a9bafec11f7e69bcb9fc4ffd8f1bc927d1ddcbbb6ff36dee5ae8b5a9d602"
+    },
+    {
+      "file": "icons/deepseek.svg",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/deepseek-color.svg",
+      "variant": "color",
+      "adaptation": null,
+      "sha256": "deba5f98a5c1796e20fcac3149bcd7eb8a32f0bdd04d048819400b1f28bd1439"
+    },
+    {
+      "file": "icons/grok.svg",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/grok.svg",
+      "variant": "mono",
+      "adaptation": "currentColor replaced with #FFFFFF for external image rendering",
+      "sha256": "50fc23b4b127b28dd8fe8a09be69127e3d0d2ff65b30fd9f04cb7a5df1c58e51"
+    },
+    {
+      "file": "icons/perplexity.svg",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/master/packages/static-svg/icons/perplexity.svg",
+      "variant": "mono",
+      "adaptation": "currentColor replaced with #FFFFFF for external image rendering",
+      "sha256": "c075d10e238a314c8eee9353bb697fe13a5463f570a57c4729a21737376c82b0"
+    },
+    {
+      "file": "icons/LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/master/LICENSE",
+      "variant": "license",
+      "adaptation": null,
+      "sha256": "add9d7531d1b21646317a8958e38fc727506fa39d24bdecb44154d943c82753a"
+    },
+    {
+      "file": "fonts/InterVariable.woff2",
+      "url": "https://raw.githubusercontent.com/rsms/inter/master/docs/font-files/InterVariable.woff2",
+      "variant": "font",
+      "adaptation": null,
+      "sha256": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3"
+    },
+    {
+      "file": "fonts/LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt",
+      "variant": "license",
+      "adaptation": null,
+      "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a"
+    }
+  ]
+}
