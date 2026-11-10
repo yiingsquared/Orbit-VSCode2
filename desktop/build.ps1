@@ -55,7 +55,7 @@ finally {
   $orbitHashAlgorithm.Dispose()
 }
 
-$orbitMetadata = '{"filename":"Orbit-Setup.exe","size":' + $orbitSetup.Length + ',"sha256":"' + $orbitDigest + '","version":"1.0.6","architecture":"anycpu","platform":"windows"}'
+$orbitMetadata = '{"filename":"Orbit-Setup.exe","size":' + $orbitSetup.Length + ',"sha256":"' + $orbitDigest + '","version":"1.0.7","architecture":"anycpu","platform":"windows"}'
 [IO.File]::WriteAllText((Join-Path $orbitRelease 'installer.json'), $orbitMetadata, (New-Object Text.UTF8Encoding $false))
 
 Write-Output "Built companion and installer in $orbitRelease"

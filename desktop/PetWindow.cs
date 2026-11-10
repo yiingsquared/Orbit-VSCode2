@@ -952,6 +952,7 @@ namespace OrbitDesktop
             {
                 for (int state = 0; state < 3; state++)
                 {
+                    hasUnreadReplies = state == 1;
                     docked = state > 0;
                     size = state == 0 ? 52 : 29;
                     expansion = state == 2 ? 1 : 0;
@@ -984,6 +985,7 @@ namespace OrbitDesktop
             private readonly PetWindow pet;
             private readonly Brush red = new SolidColorBrush(Color.FromRgb(255, 61, 78));
             private readonly Brush charcoal = new SolidColorBrush(Color.FromRgb(29, 28, 35));
+            private readonly Brush unread = new SolidColorBrush(Color.FromRgb(52, 199, 89));
 
             internal PetSurface(PetWindow window) { pet = window; }
 
@@ -1029,10 +1031,9 @@ namespace OrbitDesktop
                     drawing.Pop();
                 }
 
-                if (!pet.home.Parked && !pet.home.Returning && !pet.inputOpen && !pet.dragging)
+                if (pet.hasUnreadReplies && !pet.home.Parked && !pet.home.Returning && !pet.inputOpen && !pet.dragging)
                 {
-                    var statusBrush = pet.hasUnreadReplies ? Brushes.White : Brushes.Gray;
-                    drawing.DrawEllipse(statusBrush, new Pen(charcoal, 1), new Point(pet.position.X + pet.size * 0.42, pet.position.Y - pet.size * 0.36), 3, 3);
+                    drawing.DrawEllipse(unread, new Pen(charcoal, 1), new Point(pet.position.X + pet.size * 0.42, pet.position.Y - pet.size * 0.36), 3, 3);
                 }
 
                 if (pet.expansion > 0.05 && pet.expansion < 0.75)
@@ -1104,7 +1105,7 @@ namespace OrbitDesktop
                         drawing.DrawText(heart, new Point(center.X - 13 + index * 9, center.Y - 16 - progress * 4 - (index % 2) * 3));
                     }
                 }
-                if (pet.home.Parked && pet.hasUnreadReplies) drawing.DrawEllipse(Brushes.White, null, new Point(center.X + 10, center.Y - 9), 2.5, 2.5);
+                if (pet.home.Parked && pet.hasUnreadReplies) drawing.DrawEllipse(unread, null, new Point(center.X + 10, center.Y - 9), 2.5, 2.5);
             }
 
             // Pinched neck and elastic recoil

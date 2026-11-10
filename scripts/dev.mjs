@@ -37,7 +37,13 @@ const contentTypes = {
 };
 
 const publicRoot = path.join(projectRoot, "public");
-let activePort = 4310;
+const requestedPort = process.env.ORBIT_PORT ?? "4310";
+const activePort = Number(requestedPort);
+const validPort =
+  String(activePort) === requestedPort &&
+  Number.isInteger(activePort) &&
+  activePort >= 4310 &&
+  activePort <= 4320;
 let sourceWatcher;
 
 // Local file boundaries
@@ -267,14 +273,21 @@ const server = createServer((request, response) => {
 });
 
 server.on("error", (error) => {
-  if (error.code === "EADDRINUSE" && activePort < 4320) {
-    activePort += 1;
-    server.listen(activePort, "127.0.0.1");
+  if (error.code === "EADDRINUSE") {
+    console.error(`\n  Port ${activePort} is already in use.`);
+    console.error(
+      `  Open http://127.0.0.1:${activePort}/ if Orbit is already running.`,
+    );
+    console.error(
+      "  Stop the old Orbit terminal with Ctrl+C before restarting.\n",
+    );
   } else {
     console.error("Server error:", error.message);
-    sourceWatcher?.close();
-    process.exitCode = 1;
   }
+
+  clearTimeout(compileTimer);
+  sourceWatcher?.close();
+  process.exitCode = 1;
 });
 
 server.on("listening", () => {
@@ -308,6 +321,9 @@ function scheduleCompile() {
 }
 
 try {
+  if (!validPort)
+    throw new Error("ORBIT_PORT must be a whole number from 4310 to 4320");
+
   await ensureLocalConfig();
   await compileSources();
 

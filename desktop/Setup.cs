@@ -96,7 +96,7 @@ namespace OrbitInstaller
                 using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\OrbitCompanion"))
                 {
                     key.SetValue("DisplayName", "Orbit Companion");
-                    key.SetValue("DisplayVersion", "1.0.6");
+                    key.SetValue("DisplayVersion", "1.0.7");
                     key.SetValue("Publisher", "Orbit");
                     key.SetValue("InstallLocation", directory);
                     key.SetValue("DisplayIcon", Path.Combine(directory, "Orbit.exe"));

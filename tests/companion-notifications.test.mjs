@@ -63,7 +63,7 @@ async function withBridge(action) {
   }
 }
 
-test("ear indicator starts gray, turns white for a successful unread reply, and clears on read", async () => {
+test("unread indicator is absent initially, appears for a successful unread reply, and clears on read", async () => {
   await withBridge(async ({ post, nativeState }) => {
     assert.equal((await nativeState()).hasUnreadReplies, false);
     assert.equal(
@@ -82,7 +82,7 @@ test("ear indicator starts gray, turns white for a successful unread reply, and 
   });
 });
 
-test("reading before publishing and duplicate deliveries never resurrect the white dot", async () => {
+test("reading before publishing and duplicate deliveries never restore a cleared unread indicator", async () => {
   await withBridge(async ({ post, nativeState }) => {
     await post("reply-read", { clientId, ...identity });
     await post("reply-published", {
