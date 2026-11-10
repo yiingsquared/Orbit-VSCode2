@@ -1,1 +1,1 @@
-PASS: immediate hover, exact cat silhouette, hidden-window attachment recovery, installation handoff, protected grants, context heartbeat, input focus, Enter send guard, draft recovery, occlusion, and website controls
+PASS: fixed home, elastic release and return, latched detachment, immediate hover, exact cat silhouette, hidden-window recovery, protected installation, context heartbeat, focus, send guard, draft recovery, occlusion, and website controls

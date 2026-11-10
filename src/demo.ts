@@ -11,6 +11,7 @@ export function initCompanionDemo(): void {
   const typing = document.getElementById("demo-typing");
   const notch = document.getElementById("demo-notch");
   const tether = document.getElementById("demo-tether");
+  const gradient = document.getElementById("demo-launch-gradient");
 
   if (
     !stage ||
@@ -36,22 +37,47 @@ export function initCompanionDemo(): void {
 
   function draw(time: number): void {
     const progress = reducedMotion.matches
-      ? 3.4
+      ? 3.7
       : ((time - started) / 1000) % 9;
-    const drag = smooth((progress - 0.6) / 1.7);
-    const dock = smooth((progress - 2.2) / 0.5);
+    const dock = smooth((progress - 3.1) / 0.45);
     const opening = smooth((progress - 4) / 0.55);
     const closing = smooth((progress - 7.2) / 0.5);
     const expanded = opening * (1 - closing);
-    const x = 42 + drag * 236;
-    const y = 142 - Math.sin((drag * Math.PI) / 2) * 91 + dock * 7;
+    let centerX = 300;
+    let centerY = 15;
+    const between = (
+      a: number,
+      b: number,
+      start: number,
+      duration: number,
+    ): number => a + (b - a) * smooth((progress - start) / duration);
+    if (progress >= 0.6 && progress < 1.6) {
+      centerX = between(300, 275, 0.6, 1);
+      centerY = between(15, 117, 0.6, 1);
+    } else if (progress < 2.1 && progress >= 1.6) {
+      centerX = between(275, 345, 1.6, 0.5);
+      centerY = between(117, 130, 1.6, 0.5);
+    } else if (progress < 2.4 && progress >= 2.1) {
+      centerX = between(345, 315, 2.1, 0.3);
+      centerY = between(130, 180, 2.1, 0.3);
+    } else if (progress < 3.1 && progress >= 2.4) {
+      centerX = between(315, 300, 2.4, 0.7);
+      centerY = between(180, 100, 2.4, 0.7);
+    } else if (progress >= 3.1) {
+      centerX = 300;
+      centerY = 100 - dock * 28;
+    }
+    const x = centerX - 22;
+    const y = centerY - 21;
     const squash = 1 - dock * 0.3;
 
     cat!.setAttribute(
       "transform",
       `translate(${x} ${y}) translate(22 21) scale(${1 + dock * 0.08} ${squash}) translate(-22 -21)`,
     );
-    cat!.style.opacity = String(1 - expanded);
+    cat!.style.opacity = String(
+      smooth((progress - 0.6) / 0.18) * (1 - expanded),
+    );
     notch!.style.opacity = String(dock);
     cursor!.setAttribute(
       "transform",
@@ -69,14 +95,22 @@ export function initCompanionDemo(): void {
       `${Math.max(0, Math.min(90, (progress - 4.8) * 45))} 130`,
     );
 
-    if (progress > 1.6 && progress < 2.4) {
-      const width = 3 + (1 - dock) * 3;
-
+    if (progress > 0.65 && progress < 2.28) {
+      const dx = centerX - 300;
+      const dy = centerY - 15;
+      const distance = Math.hypot(dx, dy);
+      const nx = -dy / Math.max(1, distance);
+      const ny = dx / Math.max(1, distance);
+      const mx = 300 + dx * 0.52;
+      const my = 15 + dy * 0.52;
+      const neck = Math.max(1.3, 4.5 * (1 - distance / 180));
       tether!.setAttribute(
         "d",
-        `M300 73Q${x + 20} ${y - 5} ${x + 20 - width} ${y + 18}L${x + 24 + width} ${y + 18}Q${x + 24} ${y - 5} 302 73Z`,
+        `M${300 + nx * 6} ${15 + ny * 6}Q${mx + nx * neck} ${my + ny * neck} ${centerX + nx * 13} ${centerY + ny * 13}L${centerX - nx * 13} ${centerY - ny * 13}Q${mx - nx * neck} ${my - ny * neck} ${300 - nx * 6} ${15 - ny * 6}Z`,
       );
-      tether!.style.opacity = String((1 - dock) * 0.65);
+      gradient?.setAttribute("x2", String(centerX));
+      gradient?.setAttribute("y2", String(centerY));
+      tether!.style.opacity = "1";
     } else {
       tether!.style.opacity = "0";
     }

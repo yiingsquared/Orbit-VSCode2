@@ -29,6 +29,7 @@ namespace OrbitDesktop
         private readonly DispatcherTimer frame = new DispatcherTimer();
         private readonly DispatcherTimer sync = new DispatcherTimer();
         private readonly Random random = new Random();
+        private readonly HomePull home = new HomePull();
         private IntPtr handle;
         private IntPtr target;
         private IntPtr lastForeground;
@@ -37,6 +38,8 @@ namespace OrbitDesktop
         private Point velocity;
         private Point dragOrigin;
         private Point dragPointer;
+        private Point previousDragPointer;
+        private Point catBeforeDrag;
         private Point tetherAnchor;
         private Point hiddenPosition;
         private uint hiddenTargetProcess;
@@ -53,6 +56,7 @@ namespace OrbitDesktop
         private DateTime interactionAt = DateTime.MinValue;
         private DateTime statusUntil = DateTime.MinValue;
         private DateTime heartUntil = DateTime.MinValue;
+        private DateTime homeHeartUntil = DateTime.MinValue;
         private string status = "Drag me to a window";
         private string provider = "Orbit";
         private string lastReply;
@@ -62,6 +66,8 @@ namespace OrbitDesktop
         private bool dragging;
         private bool dragStarted;
         private bool wasDocked;
+        private bool wasHome;
+        private bool showHome = true;
         private bool docked;
         private bool inputOpen;
         private bool paused;
@@ -115,22 +121,34 @@ namespace OrbitDesktop
                 if (!dragging) return;
 
                 dragging = false;
+                if (!dragStarted)
+                {
+                    docked = wasDocked;
+                    home.Parked = wasHome;
+                    position = catBeforeDrag;
+                    destination = position;
+                    SetActivation(false);
+                    return;
+                }
                 dragStarted = false;
                 docked = false;
                 target = IntPtr.Zero;
                 highlighted = IntPtr.Zero;
                 destination = position;
                 ResetCaptureState();
+                if (home.FromHome && !home.Detached) ReturnHome();
                 SetActivation(false);
             };
             surface.MouseRightButtonUp += delegate { ShowMenu(); };
             SourceInitialized += InitializeNative;
             Loaded += delegate
             {
-                position = new Point(Math.Max(70, Width - 135), Math.Max(90, Height - 160));
+                home.Anchor = new Point(SystemParameters.PrimaryScreenWidth / 2 - SystemParameters.VirtualScreenLeft, 22 - SystemParameters.VirtualScreenTop);
                 Native.RECT fixture;
-                if (qaTarget != IntPtr.Zero && Native.GetWindowRect(qaTarget, out fixture)) position = ScreenPoint(new Native.POINT { X = fixture.Left + 155, Y = fixture.Top + 155 });
+                if (qaTarget != IntPtr.Zero && Native.GetWindowRect(qaTarget, out fixture)) home.Anchor = ScreenPoint(new Native.POINT { X = fixture.Left + 155, Y = fixture.Top + 25 });
+                position = home.Anchor;
                 destination = position;
+                size = 28;
                 nextExpression = DateTime.UtcNow.AddSeconds(5);
                 frame.Start();
                 if (!preview || qaNetwork) sync.Start();
@@ -223,9 +241,10 @@ namespace OrbitDesktop
 
         private bool Interactive(Point point)
         {
+            if (showHome && home.Hit(point)) return true;
             if (covered && !dragging && !input.IsKeyboardFocused) return false;
             var bar = new Rect(InputBarLeft(), position.Y - 22, 312, 44);
-            return dragging || (expansion < 0.65 && HitCat(point, position, size, expansion, squash)) || (inputOpen && bar.Contains(point));
+            return dragging || (!home.Parked && expansion < 0.65 && HitCat(point, position, size, expansion, squash)) || (inputOpen && bar.Contains(point));
         }
 
         // Same silhouette as the visible cat
@@ -245,7 +264,10 @@ namespace OrbitDesktop
 
         private void BeginDrag(object sender, MouseButtonEventArgs args)
         {
-            if (args.ClickCount == 2)
+            Native.POINT cursor;
+            Native.GetCursorPos(out cursor);
+            var fromHome = showHome && home.Hit(ScreenPoint(cursor));
+            if (args.ClickCount == 2 && !fromHome)
             {
                 var foreground = Native.GetForegroundWindow();
                 if (qaTarget != IntPtr.Zero) foreground = qaTarget;
@@ -255,15 +277,18 @@ namespace OrbitDesktop
                 return;
             }
 
-            Native.POINT cursor;
-            Native.GetCursorPos(out cursor);
             dragPointer = ScreenPoint(cursor);
-            dragOrigin = position;
-            tetherAnchor = position;
+            previousDragPointer = dragPointer;
+            catBeforeDrag = position;
+            wasHome = home.Parked;
+            home.Begin(fromHome);
+            dragOrigin = fromHome ? home.Anchor : position;
+            tetherAnchor = dragOrigin;
             wasDocked = docked;
             dragging = true;
             dragStarted = false;
             inputOpen = false;
+            expansion = 0;
             input.Visibility = Visibility.Collapsed;
             SetActivation(false);
             surface.CaptureMouse();
@@ -285,11 +310,19 @@ namespace OrbitDesktop
 
             if (dragStarted)
             {
+                if (home.Parked || home.Returning || target != IntPtr.Zero) ResetCaptureState();
+                home.Parked = false;
+                home.Returning = false;
                 docked = false;
+                target = IntPtr.Zero;
                 position = dragOrigin + delta;
                 destination = position;
-                highlighted = DropTarget(cursor);
-                squash = Math.Max(0.68, Math.Min(1.3, 1 - delta.Y / 700));
+                home.Bend = Math.Max(-12, Math.Min(12, (pointer.X - previousDragPointer.X) * 0.35));
+                previousDragPointer = pointer;
+                if ((home.FromHome || wasDocked) && home.Stretch(position - tetherAnchor) && home.FromHome)
+                    homeHeartUntil = DateTime.UtcNow.AddSeconds(1.7);
+                highlighted = (home.FromHome && !home.Detached) || home.Hit(position) ? IntPtr.Zero : DropTarget(cursor);
+                squash = Math.Max(0.78, Math.Min(1.24, 1 + delta.Length / 750));
             }
         }
 
@@ -307,13 +340,17 @@ namespace OrbitDesktop
                 Native.GetCursorPos(out cursor);
                 var candidate = DropTarget(cursor);
 
-                if (candidate != IntPtr.Zero) Attach(candidate);
+                if (home.ReturnOnDrop(position)) ReturnHome();
+                else if (candidate != IntPtr.Zero) Attach(candidate);
                 else { target = IntPtr.Zero; docked = false; ShowStatus("Drop me onto a window to attach", 3); }
             }
             else
             {
                 docked = wasDocked;
-                OpenInput(true);
+                home.Parked = wasHome;
+                position = catBeforeDrag;
+                destination = position;
+                if (!home.FromHome && !home.Parked) OpenInput(true);
             }
 
             squash = 0.65;
@@ -338,6 +375,8 @@ namespace OrbitDesktop
             var left = ScreenPoint(new Native.POINT { X = rect.Left, Y = rect.Top });
             var right = ScreenPoint(new Native.POINT { X = rect.Right, Y = rect.Top });
             target = window;
+            home.Parked = false;
+            home.Returning = false;
             ResetCaptureState();
             docked = true;
             anchorRatio = Math.Max(0.08, Math.Min(0.92, (position.X - left.X) / Math.Max(1, right.X - left.X)));
@@ -347,6 +386,18 @@ namespace OrbitDesktop
             heartUntil = DateTime.UtcNow.AddSeconds(1.7);
             ShowStatus("Attached · hover to type", 3);
             ReportQa("Attached");
+        }
+
+        private void ReturnHome()
+        {
+            target = IntPtr.Zero;
+            docked = false;
+            home.Parked = false;
+            home.Returning = true;
+            destination = home.Anchor;
+            velocity = new Point(0, 0);
+            ResetCaptureState();
+            ReportQa("Returning to fixed home");
         }
 
         private void UpdateAnchor()
@@ -369,6 +420,7 @@ namespace OrbitDesktop
             Native.GetCursorPos(out pointer);
             var cursor = ScreenPoint(pointer);
             var now = DateTime.UtcNow;
+            home.Tick();
             var foreground = Native.GetForegroundWindow();
 
             if (foreground != IntPtr.Zero && !Native.IsOurs(foreground)) lastForeground = foreground;
@@ -387,13 +439,23 @@ namespace OrbitDesktop
 
             if (!dragging)
             {
+                if (home.Parked) destination = home.Anchor;
+                if (home.Returning) destination = home.Anchor;
                 velocity = new Point((velocity.X + (destination.X - position.X) * 0.18) * 0.62, (velocity.Y + (destination.Y - position.Y) * 0.18) * 0.62);
                 position = new Point(position.X + velocity.X, position.Y + velocity.Y);
+                if (home.Returning && (position - home.Anchor).Length < 1 && Math.Abs(velocity.X) + Math.Abs(velocity.Y) < 1)
+                {
+                    home.Park();
+                    position = home.Anchor;
+                    destination = position;
+                    velocity = new Point(0, 0);
+                }
             }
 
             if (++occlusionTicks % 4 == 0) UpdateCovered();
 
-            size += ((docked ? 29 : 52) - size) * 0.22;
+            var desiredSize = home.Parked ? 28 : docked ? 29 : home.Returning ? 32 : dragging && home.FromHome && !home.Detached ? 44 : 52;
+            size += (desiredSize - size) * 0.22;
             expansion += ((inputOpen ? 1 : 0) - expansion) * 0.2;
             squash += (1 - squash) * 0.22;
             eyeX += (Math.Max(-4, Math.Min(4, (cursor.X - position.X) / 80)) - eyeX) * 0.12;
@@ -408,7 +470,7 @@ namespace OrbitDesktop
 
             blink *= 0.68;
 
-            var overCat = expansion < 0.65 && HitCat(cursor, position, size, expansion, squash);
+            var overCat = !home.Parked && expansion < 0.65 && HitCat(cursor, position, size, expansion, squash);
             if (AttachmentPolicy.HoverReady(overCat, docked && !dragging && !inputOpen && !covered)) OpenInput(false);
 
             if (!dragging && inputOpen && Interactive(cursor)) hideInputAt = now.AddSeconds(1.6);
@@ -608,7 +670,7 @@ namespace OrbitDesktop
             }
 
             position = hiddenPosition;
-            destination = hiddenPosition;
+            destination = home.Returning ? home.Anchor : hiddenPosition;
             velocity = new Point(0, 0);
             covered = false;
             companionHidden = false;
@@ -784,8 +846,97 @@ namespace OrbitDesktop
             menu.IsOpen = true;
         }
 
+        // Offline animation preview
+
+        private static Point PreviewLerp(Point from, Point to, double amount)
+        {
+            amount = Math.Max(0, Math.Min(1, amount));
+            amount = amount * amount * (3 - 2 * amount);
+            return from + (to - from) * amount;
+        }
+
+        internal void RenderLaunchFrames(string directory)
+        {
+            System.IO.Directory.CreateDirectory(directory);
+            Width = 680;
+            Height = 440;
+            canvas.Width = surface.Width = 680;
+            canvas.Height = surface.Height = 440;
+            home.Anchor = new Point(340, 22);
+            home.Begin(true);
+            showHome = true;
+            statusUntil = DateTime.MinValue;
+            connected = true;
+            var brokeAt = -1.0;
+
+            for (var index = 0; index < 132; index++)
+            {
+                var time = index / 24.0;
+                home.Tick();
+                home.Parked = time < 0.8;
+                dragging = time >= 0.8 && time < 3.55;
+                dragStarted = dragging;
+                docked = time >= 3.55;
+                wasDocked = false;
+                tetherAnchor = home.Anchor;
+                home.Bend = Math.Sin(time * 6) * 5;
+                if (time < 0.8) position = home.Anchor;
+                else if (time < 1.65) position = PreviewLerp(home.Anchor, new Point(340, 126), (time - 0.8) / 0.85);
+                else if (time < 2.1) position = PreviewLerp(new Point(340, 126), new Point(260, 123), (time - 1.65) / 0.45);
+                else if (time < 2.55) position = PreviewLerp(new Point(260, 123), new Point(420, 139), (time - 2.1) / 0.45);
+                else if (time < 2.95) position = PreviewLerp(new Point(420, 139), new Point(340, 222), (time - 2.55) / 0.4);
+                else if (time < 3.55) position = PreviewLerp(new Point(340, 222), new Point(470, 261), (time - 2.95) / 0.6);
+                else position = new Point(470, 261);
+
+                if (dragging && home.Stretch(position - home.Anchor)) brokeAt = time;
+                homeHeartUntil = brokeAt >= 0 && time - brokeAt < 1.7 ? DateTime.UtcNow.AddSeconds(1.7 - (time - brokeAt)) : DateTime.MinValue;
+                size = home.Parked ? 28 : docked ? 29 : home.Detached ? 52 : 44;
+                squash = dragging && !home.Detached ? 1.14 : 1;
+                expansion = time < 4.2 ? 0 : Math.Min(1, (time - 4.2) / 0.4);
+                inputOpen = expansion > 0;
+                input.Visibility = expansion > 0.75 ? Visibility.Visible : Visibility.Collapsed;
+                input.Opacity = 1;
+                input.Text = "Ask anything";
+                Canvas.SetLeft(input, InputBarLeft() + 26);
+                Canvas.SetTop(input, position.Y - 13);
+                surface.InvalidateVisual();
+                canvas.Measure(new Size(680, 440));
+                canvas.Arrange(new Rect(0, 0, 680, 440));
+                canvas.UpdateLayout();
+                var cat = new System.Windows.Media.Imaging.RenderTargetBitmap(680, 440, 96, 96, PixelFormats.Pbgra32);
+                cat.Render(canvas);
+
+                var composed = new DrawingVisual();
+                using (var drawing = composed.RenderOpen())
+                {
+                    drawing.DrawRectangle(new SolidColorBrush(Color.FromRgb(237, 239, 243)), null, new Rect(0, 0, 680, 440));
+                    drawing.DrawRoundedRectangle(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(214, 217, 224)), 1), new Rect(122, 270, 536, 154), 13, 13);
+                    drawing.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(235, 237, 241)), 1), new Point(122, 303), new Point(658, 303));
+                    for (var row = 0; row < 5; row++) drawing.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(224, 227, 233)), null, new Rect(145, 323 + row * 17, 150 + (row % 3) * 80, 4), 2, 2);
+                    drawing.DrawImage(cat, new Rect(0, 0, 680, 440));
+                    if (time >= 0.55 && time < 4.4)
+                    {
+                        var pointer = time < 0.8 ? PreviewLerp(home.Anchor + new Vector(60, 70), home.Anchor + new Vector(8, 7), (time - 0.55) / 0.25) : position + new Vector(10, 7);
+                        drawing.PushTransform(new TranslateTransform(pointer.X, pointer.Y));
+                        drawing.PushTransform(new ScaleTransform(0.72, 0.72));
+                        drawing.DrawGeometry(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(55, 56, 64)), 1.5), Geometry.Parse("M0,0 L0,23 L6,17 L11,28 L16,25 L10,15 L20,15 Z"));
+                        drawing.Pop();
+                        drawing.Pop();
+                    }
+                }
+
+                var frameImage = new System.Windows.Media.Imaging.RenderTargetBitmap(680, 440, 96, 96, PixelFormats.Pbgra32);
+                frameImage.Render(composed);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(frameImage));
+                using (var file = System.IO.File.Create(System.IO.Path.Combine(directory, "frame-" + index.ToString("D3") + ".png"))) encoder.Save(file);
+            }
+        }
+
         internal void RenderPreview(string filename)
         {
+            showHome = false;
+            home.Parked = false;
             Width = 360;
             Height = 110;
             canvas.Width = 360;
@@ -838,7 +989,12 @@ namespace OrbitDesktop
 
             protected override void OnRender(DrawingContext drawing)
             {
-                if (pet.covered && !pet.dragging && !pet.input.IsKeyboardFocused) return;
+                if (pet.showHome) DrawHomePlate(drawing);
+                if (pet.covered && !pet.dragging && !pet.input.IsKeyboardFocused)
+                {
+                    if (pet.showHome) DrawHomeFace(drawing);
+                    return;
+                }
                 if (pet.dragging && pet.highlighted != IntPtr.Zero)
                 {
                     Native.RECT rect;
@@ -851,34 +1007,29 @@ namespace OrbitDesktop
                     }
                 }
 
-                if (pet.dragging && pet.wasDocked)
+                if (pet.showHome && pet.home.Recoil.Length > 1)
+                    DrawTether(drawing, pet.home.Anchor, pet.home.Anchor + pet.home.Recoil, 4, 0);
+
+                if (pet.home.Returning)
+                    DrawTether(drawing, pet.home.Anchor, pet.position, pet.size * 0.32, pet.home.Bend);
+                else if (pet.dragging && pet.dragStarted && (pet.home.FromHome || pet.wasDocked) && !pet.home.Detached)
                 {
-                    var delta = pet.position - pet.tetherAnchor;
-
-                    if (delta.Length < 220)
-                    {
-                        DrawNotch(drawing, pet.tetherAnchor, 74, 0);
-                        var normal = new Vector(-delta.Y, delta.X);
-                        if (normal.Length > 0) normal.Normalize();
-                        var neck = new StreamGeometry();
-
-                        using (var context = neck.Open())
-                        {
-                            context.BeginFigure(pet.tetherAnchor + normal * 10, true, true);
-                            context.BezierTo(pet.tetherAnchor + delta * 0.5 + normal * 3, pet.position - delta * 0.2 + normal * 8, pet.position + normal * 17, true, false);
-                            context.LineTo(pet.position - normal * 17, true, false);
-                            context.BezierTo(pet.position - delta * 0.2 - normal * 8, pet.tetherAnchor + delta * 0.5 - normal * 3, pet.tetherAnchor - normal * 10, true, false);
-                        }
-
-                        drawing.DrawGeometry(new LinearGradientBrush(Color.FromRgb(40, 30, 40), Color.FromRgb(255, 61, 78), 90), null, neck);
-                    }
+                    if (!pet.home.FromHome) DrawNotch(drawing, pet.tetherAnchor, 74, 0);
+                    DrawTether(drawing, pet.tetherAnchor, pet.position, pet.size * 0.32, pet.home.Bend);
                 }
 
-                if (pet.docked || pet.expansion > 0.02) DrawNotch(drawing, pet.position, 76 + pet.expansion * 235, pet.expansion);
+                if (pet.showHome) DrawHomeFace(drawing);
 
-                if (pet.expansion < 0.65) DrawCat(drawing);
+                if (!pet.home.Parked && (pet.docked || pet.expansion > 0.02)) DrawNotch(drawing, pet.position, 76 + pet.expansion * 235, pet.expansion);
 
-                if (!pet.inputOpen && !pet.dragging)
+                if (!pet.home.Parked && pet.expansion < 0.65)
+                {
+                    drawing.PushOpacity(pet.home.Returning ? Math.Min(1, (pet.position - pet.home.Anchor).Length / 30) : 1);
+                    DrawCat(drawing);
+                    drawing.Pop();
+                }
+
+                if (!pet.home.Parked && !pet.home.Returning && !pet.inputOpen && !pet.dragging)
                 {
                     var statusBrush = pet.hasUnreadReplies ? Brushes.White : Brushes.Gray;
                     drawing.DrawEllipse(statusBrush, new Pen(charcoal, 1), new Point(pet.position.X + pet.size * 0.42, pet.position.Y - pet.size * 0.36), 3, 3);
@@ -890,7 +1041,7 @@ namespace OrbitDesktop
                     drawing.DrawRoundedRectangle(red, null, new Rect(pet.position.X - width / 2, pet.position.Y - 7, width, 14), 9, 9);
                 }
 
-                if (DateTime.UtcNow < pet.heartUntil)
+                if (!pet.home.Parked && DateTime.UtcNow < pet.heartUntil)
                 {
                     var seconds = (pet.heartUntil - DateTime.UtcNow).TotalSeconds;
 
@@ -902,6 +1053,85 @@ namespace OrbitDesktop
                 }
 
                 if (DateTime.UtcNow < pet.statusUntil && !pet.inputOpen && !pet.dragging) DrawStatus(drawing);
+            }
+
+            // Fixed screen-top source
+
+            private void DrawHomePlate(DrawingContext drawing)
+            {
+                var center = pet.home.Anchor;
+                var top = center.Y - 22;
+                var shape = new StreamGeometry();
+                using (var line = shape.Open())
+                {
+                    line.BeginFigure(new Point(center.X - 66, top), true, true);
+                    line.BezierTo(new Point(center.X - 48, top), new Point(center.X - 50, top + 34), new Point(center.X - 32, top + 34), true, false);
+                    line.LineTo(new Point(center.X + 32, top + 34), true, false);
+                    line.BezierTo(new Point(center.X + 50, top + 34), new Point(center.X + 48, top), new Point(center.X + 66, top), true, false);
+                }
+                drawing.DrawGeometry(charcoal, null, shape);
+            }
+
+            private void DrawHomeFace(DrawingContext drawing)
+            {
+                var center = pet.home.Anchor + pet.home.Recoil * 0.035;
+                var pulling = pet.home.Returning || pet.dragging && pet.dragStarted && pet.home.FromHome && !pet.home.Detached;
+                var happy = DateTime.UtcNow < pet.homeHeartUntil;
+                drawing.DrawEllipse(new SolidColorBrush(Color.FromRgb(49, 45, 55)), null, center, 13, 11);
+
+                foreach (var side in new[] { -1, 1 })
+                {
+                    var eye = new Point(center.X + side * 3.6 + pet.eyeX * 0.3, center.Y + pet.eyeY * 0.3);
+                    if (happy || pulling)
+                    {
+                        var smile = new StreamGeometry();
+                        using (var line = smile.Open())
+                        {
+                            line.BeginFigure(new Point(eye.X - 2.7, eye.Y + 1), false, false);
+                            line.QuadraticBezierTo(new Point(eye.X, eye.Y - (pulling ? 5 : 4)), new Point(eye.X + 2.7, eye.Y + 1), true, false);
+                        }
+                        drawing.DrawGeometry(null, new Pen(Brushes.White, 1.7), smile);
+                    }
+                    else drawing.DrawRoundedRectangle(Brushes.White, null, new Rect(eye.X - 1.4, eye.Y - 2, 2.8, Math.Max(1.2, 4.5 * (1 - pet.blink))), 1.4, 1.4);
+                }
+
+                if (happy)
+                {
+                    var progress = 1.7 - (pet.homeHeartUntil - DateTime.UtcNow).TotalSeconds;
+                    for (var index = 0; index < 3; index++)
+                    {
+                        var heart = new FormattedText("♥", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Symbol"), 8, red, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                        drawing.DrawText(heart, new Point(center.X - 13 + index * 9, center.Y - 16 - progress * 4 - (index % 2) * 3));
+                    }
+                }
+                if (pet.home.Parked && pet.hasUnreadReplies) drawing.DrawEllipse(Brushes.White, null, new Point(center.X + 10, center.Y - 9), 2.5, 2.5);
+            }
+
+            // Pinched neck and elastic recoil
+
+            private void DrawTether(DrawingContext drawing, Point anchor, Point tip, double radius, double bend)
+            {
+                var offset = tip - anchor;
+                if (offset.Length < 1) return;
+                var normal = new Vector(-offset.Y, offset.X);
+                normal.Normalize();
+                var middle = anchor + offset * 0.52 + normal * bend;
+                var neckWidth = Math.Max(1.5, 6 * (1 - offset.Length / 230));
+                var shape = new StreamGeometry();
+                using (var line = shape.Open())
+                {
+                    line.BeginFigure(anchor + normal * 8, true, true);
+                    line.BezierTo(anchor + offset * 0.25 + normal * 5, middle - offset * 0.18 + normal * neckWidth, middle + normal * neckWidth, true, false);
+                    line.BezierTo(middle + offset * 0.2 + normal * neckWidth, tip - offset * 0.08 + normal * radius, tip + normal * radius, true, false);
+                    line.LineTo(tip - normal * radius, true, false);
+                    line.BezierTo(tip - offset * 0.08 - normal * radius, middle + offset * 0.2 - normal * neckWidth, middle - normal * neckWidth, true, false);
+                    line.BezierTo(middle - offset * 0.18 - normal * neckWidth, anchor + offset * 0.25 - normal * 5, anchor - normal * 8, true, false);
+                }
+                var gradient = new LinearGradientBrush {
+                    MappingMode = BrushMappingMode.Absolute, StartPoint = anchor, EndPoint = tip,
+                    GradientStops = new GradientStopCollection { new GradientStop(Color.FromRgb(49, 45, 55), 0), new GradientStop(Color.FromRgb(110, 42, 57), 0.42), new GradientStop(Color.FromRgb(255, 61, 78), 1) }
+                };
+                drawing.DrawGeometry(gradient, null, shape);
             }
 
             private void DrawNotch(DrawingContext drawing, Point center, double width, double open)

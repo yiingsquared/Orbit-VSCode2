@@ -17,6 +17,12 @@ namespace OrbitDesktop
             if (args.Length == 1 && args[0] == "--qa-window") return QaWindow.Run();
             if (args.Length == 1 && args[0] == "--qa-window-no-backdrop") return QaWindow.Run(false);
             if (args.Length == 4 && args[0] == "--bridge-test") return BridgeTest(args);
+            if (args.Length == 2 && args[0] == "--render-launch-preview")
+            {
+                var renderer = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                using (var client = new BridgeClient(false)) new PetWindow(client, true).RenderLaunchFrames(args[1]);
+                return 0;
+            }
             if (args.Length == 2 && args[0] == "--render-preview")
             {
                 var renderer = new Application();
@@ -72,10 +78,11 @@ namespace OrbitDesktop
                 && ControlChecks()
                 && HoverChecks()
                 && VisibilityChecks()
+                && HomePullChecks()
                 && BootstrapChecks()
                 && AttachmentChecks();
 
-            if (args.Length > 1) File.WriteAllText(args[1], valid ? "PASS: immediate hover, exact cat silhouette, hidden-window attachment recovery, installation handoff, protected grants, context heartbeat, input focus, Enter send guard, draft recovery, occlusion, and website controls" : "FAIL");
+            if (args.Length > 1) File.WriteAllText(args[1], valid ? "PASS: fixed home, elastic release and return, latched detachment, immediate hover, exact cat silhouette, hidden-window recovery, protected installation, context heartbeat, focus, send guard, draft recovery, occlusion, and website controls" : "FAIL");
             return valid ? 0 : 1;
         }
 
@@ -87,6 +94,24 @@ namespace OrbitDesktop
                 && PetWindow.HitCat(new Point(0, 0), new Point(0, 0), 29, 0, 1)
                 && !PetWindow.HitCat(new Point(20, 0), new Point(0, 0), 29, 0, 1)
                 && !PetWindow.HitCat(new Point(-30, -24), new Point(0, 0), 64, 0, 1);
+        }
+
+        private static bool HomePullChecks()
+        {
+            var pull = new HomePull { Anchor = new Point(400, 22) };
+            if (!pull.Parked || !pull.Hit(pull.Anchor) || pull.Hit(new Point(430, 22))) return false;
+            pull.Begin(true);
+            if (pull.Stretch(new Vector(0, 120)) || !pull.ReturnOnDrop(new Point(430, 100))) return false;
+            if (!pull.Stretch(new Vector(0, 181)) || !pull.Detached || pull.ReturnOnDrop(new Point(430, 100))) return false;
+            if (pull.Stretch(new Vector(0, 20)) || !pull.Detached) return false;
+            var recoil = pull.Recoil.Length;
+            pull.Tick();
+            if (pull.Recoil.Length >= recoil || !pull.ReturnOnDrop(pull.Anchor)) return false;
+            if (pull.Anchor != new Point(400, 22)) return false;
+            pull.Park();
+            if (!pull.Parked || pull.Detached || pull.Returning || pull.FromHome) return false;
+            pull.Begin(false);
+            return !pull.ReturnOnDrop(new Point(500, 300)) && !pull.Stretch(new Vector(20, 20));
         }
 
         private static bool VisibilityChecks()

@@ -26,7 +26,7 @@ $orbitReferences += @(
   'UIAutomationClient.dll', 'UIAutomationTypes.dll'
 ) | ForEach-Object { '/reference:' + (Join-Path $orbitWpf $_) }
 
-$orbitSources = @('AssemblyInfo.cs', 'Program.cs', 'NativeMethods.cs', 'BridgeClient.cs', 'InstallBootstrap.cs', 'ContextReader.cs', 'PetWindow.cs', 'QaWindow.cs', 'AttachmentPolicy.cs', 'InteractionQaWindow.cs') | ForEach-Object { Join-Path $orbitRoot $_ }
+$orbitSources = @('AssemblyInfo.cs', 'Program.cs', 'NativeMethods.cs', 'BridgeClient.cs', 'InstallBootstrap.cs', 'ContextReader.cs', 'PetWindow.cs', 'HomePull.cs', 'QaWindow.cs', 'AttachmentPolicy.cs', 'InteractionQaWindow.cs') | ForEach-Object { Join-Path $orbitRoot $_ }
 
 & $orbitCompiler /nologo /optimize+ /target:winexe /platform:anycpu "/win32manifest:$orbitRoot\app.manifest" "/out:$orbitRelease\Orbit.exe" @orbitReferences @orbitSources
 if ($LASTEXITCODE -ne 0) { throw 'Companion compilation failed' }
@@ -55,7 +55,7 @@ finally {
   $orbitHashAlgorithm.Dispose()
 }
 
-$orbitMetadata = '{"filename":"Orbit-Setup.exe","size":' + $orbitSetup.Length + ',"sha256":"' + $orbitDigest + '","version":"1.0.5","architecture":"anycpu","platform":"windows"}'
+$orbitMetadata = '{"filename":"Orbit-Setup.exe","size":' + $orbitSetup.Length + ',"sha256":"' + $orbitDigest + '","version":"1.0.6","architecture":"anycpu","platform":"windows"}'
 [IO.File]::WriteAllText((Join-Path $orbitRelease 'installer.json'), $orbitMetadata, (New-Object Text.UTF8Encoding $false))
 
 Write-Output "Built companion and installer in $orbitRelease"

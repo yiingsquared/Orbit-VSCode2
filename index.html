@@ -424,6 +424,25 @@
           role="img"
           aria-label="The cat moves to a window, docks, and opens a message input"
         >
+          <defs>
+            <linearGradient
+              id="demo-launch-gradient"
+              gradientUnits="userSpaceOnUse"
+              x1="300"
+              y1="15"
+              x2="300"
+              y2="140"
+            >
+              <stop stop-color="#312d37" />
+              <stop offset=".42" stop-color="#6e2a39" />
+              <stop offset="1" stop-color="#ff414d" />
+            </linearGradient>
+          </defs>
+          <path
+            fill="#1d1c23"
+            stroke="none"
+            d="M260 0C271 0 272 25 285 25h30C328 25 329 0 340 0Z"
+          />
           <rect
             class="demo-window"
             x="88"
@@ -443,21 +462,27 @@
           </g>
           <path
             id="demo-notch"
+            opacity="0"
             class="demo-notch"
             d="M263 86c8 0 6-19 15-19h44c9 0 7 19 15 19"
           />
-          <path id="demo-tether" fill="#ff414d" />
-          <g id="demo-cat">
+          <path id="demo-tether" fill="url(#demo-launch-gradient)" />
+          <g id="demo-home-face" fill="#312d37" stroke="none">
+            <ellipse cx="300" cy="15" rx="10" ry="8" />
+            <rect x="296" y="13" width="2" height="3.5" rx="1" fill="#fff" />
+            <rect x="302" y="13" width="2" height="3.5" rx="1" fill="#fff" />
+          </g>
+          <g id="demo-cat" opacity="0">
             <image href="/assets/orbit-cat.svg" width="44" height="42" />
           </g>
-          <g id="demo-input">
+          <g id="demo-input" opacity="0">
             <rect x="211" y="59" width="178" height="29" rx="14.5" />
             <path id="demo-input-mark" d="M226 70v9" />
             <g id="demo-typing">
               <path d="M233 75h11M249 75h9M263 75h15M283 75h9M297 75h13" />
             </g>
           </g>
-          <path id="demo-cursor" d="M0 0v20l5-5 5 9 4-2-5-9h8Z" />
+          <path id="demo-cursor" opacity="0" d="M0 0v20l5-5 5 9 4-2-5-9h8Z" />
         </svg>
         <a
           class="dialog-primary download-button"
