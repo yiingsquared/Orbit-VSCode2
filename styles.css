@@ -1172,6 +1172,42 @@ a:focus-visible {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Memory provenance */
+
+.memory-entry-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.memory-source {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  color: #9899a5;
+  font-size: 10px;
+}
+
+.memory-source-icon {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+.memory-source-icon[src$="/openai.svg"],
+.memory-source-icon[src$="/grok.svg"],
+.memory-source-icon[src$="/perplexity.svg"] {
+  filter: brightness(0);
+}
+
+.memory-learning-status {
+  margin-top: 12px;
+  color: #9899a5;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
 .memory-entry > button {
   display: grid;
   width: 27px;
@@ -1183,6 +1219,17 @@ a:focus-visible {
   color: #999aa6;
   font-size: 17px;
 }
+
+.memory-entry > button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.memory-entry > button:hover {
+  color: #4b4c5b;
+  background: #f7f7fa;
+}
+
 .memory-form {
   margin-top: 23px;
 }

@@ -8,6 +8,7 @@ import {
 } from "./store.js";
 import type { ProviderId, Chat, Message, Attachment } from "./store.js";
 import { streamChat } from "./stream.js";
+import { createMemoryLearner, selectSharedMemories } from "./shared-memory.js";
 import { renderMarkdown } from "./markdown.js";
 import { initAuth } from "./auth.js";
 import { initIntro } from "./intro.js";
@@ -87,6 +88,49 @@ let signingOut = false;
 const readReplies = new Set<string>();
 
 memoryToggle.checked = readStored("orbit.includeMemory.v1", true) === true;
+
+// Automatic shared memory
+
+const memoryLearner = createMemoryLearner({
+  getNotes: () => notes,
+  saveNotes: (next) => {
+    if (!writeStored("orbit.notes.v1", next)) return false;
+
+    notes.splice(0, notes.length, ...next);
+    writeStored("orbit.preview.notes.v1", notes);
+    renderMemory();
+    return true;
+  },
+  getProcessed: () => {
+    const saved = readStored<unknown>("orbit.memory.processed.v1", []);
+
+    return Array.isArray(saved)
+      ? saved.filter((value): value is string => typeof value === "string")
+      : [];
+  },
+  saveProcessed: (turns) => {
+    writeStored("orbit.memory.processed.v1", turns);
+  },
+  enabled: () => Boolean(accountId) && memoryToggle.checked && !signingOut,
+  isCurrent: (turn) =>
+    Boolean(
+      chats
+        .find((chat) => chat.id === turn.chatId)
+        ?.messages.some(
+          (message) =>
+            message.id === turn.messageId &&
+            message.text === turn.message &&
+            (message.editedAt || 0) === (turn.editedAt || 0),
+        ),
+    ),
+  status: (message, busy) => {
+    const status = element("memory-learning-status");
+
+    status.textContent = message;
+    status.hidden = !message;
+    status.setAttribute("aria-busy", String(busy));
+  },
+});
 
 // Small UI helpers
 
@@ -618,6 +662,9 @@ async function sendRequest(
   )!;
 
   try {
+    await memoryLearner.ready(abort.signal);
+    if (requestGeneration !== accountGeneration) return;
+
     const referenceFiles: Attachment[] = preceding
       .flatMap((message) => message.files || [])
       .slice(-3);
@@ -654,7 +701,7 @@ async function sendRequest(
           text: message.text,
         })),
         memories: memoryToggle.checked
-          ? notes.slice(-20).map((note) => note.text)
+          ? selectSharedMemories(notes).map((note) => note.text)
           : [],
         attachments: referenceFiles.slice(-3),
       },
@@ -677,6 +724,18 @@ async function sendRequest(
 
     assistant.state = "complete";
     assistant.createdAt = Date.now();
+
+    const sentUser = preceding.at(-1);
+
+    if (sentUser?.role === "user")
+      void memoryLearner.learn({
+        provider: chat.provider,
+        model: chat.model,
+        chatId: chat.id,
+        messageId: sentUser.id,
+        message: sentUser.text,
+        editedAt: sentUser.editedAt,
+      });
 
     void publishCompanionReply({
       ...replyIdentity(chat, assistant),
@@ -798,27 +857,58 @@ function renderMemory(): void {
 
     empty.className = "memory-empty";
     empty.textContent =
-      "Nothing saved yet. Add something you want Orbit to remember.";
+      "Important details from your chats will appear here. You can also add a memory below.";
     target.append(empty);
   }
 
-  for (const note of [...notes].reverse()) {
+  for (const note of [...notes].sort(
+    (a, b) => (b.updated || b.created) - (a.updated || a.created),
+  )) {
     const row = document.createElement("div");
+    const content = document.createElement("div");
     const text = document.createElement("p");
+    const meta = document.createElement("div");
+    const origin = document.createElement("span");
     const remove = document.createElement("button");
 
     row.className = "memory-entry";
+    content.className = "memory-entry-content";
     text.textContent = note.text;
-    remove.textContent = "×";
+    meta.className = "memory-source";
+    origin.textContent = note.source ? "Auto-saved" : "Added manually";
+
+    if (note.source) {
+      const logo = document.createElement("img");
+      const name = providerNames[note.source.provider];
+
+      logo.className = "memory-source-icon";
+      logo.src = `/assets/icons/${note.source.provider}.svg`;
+      logo.alt = name;
+      logo.title = `From your ${name} conversation`;
+      meta.title = logo.title;
+      meta.append(logo);
+    }
+
+    meta.append(origin);
+    remove.innerHTML = '<svg aria-hidden="true"><use href="#i-trash" /></svg>';
     remove.type = "button";
     remove.setAttribute("aria-label", "Delete memory");
+    remove.title = "Delete memory";
     remove.addEventListener("click", () => {
-      notes.splice(notes.indexOf(note), 1);
-      writeStored("orbit.notes.v1", notes);
-      writeStored("orbit.preview.notes.v1", notes);
+      const next = notes.filter((entry) => entry.id !== note.id);
+
+      if (!writeStored("orbit.notes.v1", next)) {
+        toast("This memory could not be deleted. Please try again.");
+        return;
+      }
+
+      memoryLearner.forget(note);
+      notes.splice(0, notes.length, ...next);
+      writeStored("orbit.preview.notes.v1", next);
       renderMemory();
     });
-    row.append(text, remove);
+    content.append(text, meta);
+    row.append(content, remove);
     target.append(row);
   }
 }
@@ -835,18 +925,28 @@ element<HTMLFormElement>("memory-form").addEventListener("submit", (event) => {
     return;
   }
 
-  notes.push({ id: crypto.randomUUID(), text, created: Date.now() });
+  const next = [
+    ...notes,
+    { id: crypto.randomUUID(), text, created: Date.now() },
+  ];
 
-  if (!writeStored("orbit.notes.v1", notes))
+  if (!writeStored("orbit.notes.v1", next)) {
     toast("Browser storage is full. This memory could not be saved.");
+    return;
+  }
+
+  notes.splice(0, notes.length, ...next);
+  writeStored("orbit.preview.notes.v1", next);
 
   field.value = "";
   renderMemory();
 });
 
-memoryToggle.addEventListener("change", () =>
-  writeStored("orbit.includeMemory.v1", memoryToggle.checked),
-);
+memoryToggle.addEventListener("change", () => {
+  writeStored("orbit.includeMemory.v1", memoryToggle.checked);
+
+  if (!memoryToggle.checked) memoryLearner.reset();
+});
 
 // Connection status
 
@@ -1266,6 +1366,7 @@ const auth = initAuth({
 
     if (accountId !== (user?.id || null)) {
       accountGeneration += 1;
+      memoryLearner.reset();
       activeRequest?.abort.abort();
       activeRequest = null;
       stopMessageSpeech();
@@ -1288,6 +1389,7 @@ const auth = initAuth({
   },
   beforeSignOut: async () => {
     accountGeneration += 1;
+    memoryLearner.reset();
     signingOut = true;
     workspaceEnabled = false;
 

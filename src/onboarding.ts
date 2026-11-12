@@ -193,8 +193,7 @@ export function initOnboarding(options: EntryOptions) {
     intro.hidden = next === "workspace";
     workspace.hidden = next !== "workspace";
     document.body.dataset.view = next === "workspace" ? "workspace" : "intro";
-    document.title =
-      next === "workspace" ? "Orbit" : "Orbit — Your AI. In your orbit.";
+    document.title = "Orbit";
     options.onStageChange(next);
 
     if (next === "workspace" || next === "intro") {

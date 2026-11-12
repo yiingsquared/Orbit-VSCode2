@@ -34,7 +34,14 @@ export type Chat = {
   archived?: boolean;
 };
 
-export type Note = { id: string; text: string; created: number };
+export type Note = {
+  id: string;
+  text: string;
+  created: number;
+  updated?: number;
+  key?: string;
+  source?: { provider: ProviderId; chatId: string; messageId: string };
+};
 
 export const providerNames: Record<ProviderId, string> = {
   openai: "ChatGPT",
@@ -52,6 +59,7 @@ const accountKeys = new Set([
   "orbit.notes.v1",
   "orbit.preview.notes.v1",
   "orbit.includeMemory.v1",
+  "orbit.memory.processed.v1",
 ]);
 const legacyOwnerKey = "orbit.storage.legacy-owner.v1";
 const memoryClaims = new WeakMap<Storage, string>();
@@ -286,6 +294,17 @@ export function loadNotes(): Note[] {
     )
     .map((note) => ({
       ...note,
+      key:
+        typeof note.key === "string" && /^[a-z0-9_]{1,80}$/.test(note.key)
+          ? note.key
+          : undefined,
+      source:
+        note.source &&
+        Object.hasOwn(providerNames, note.source.provider) &&
+        typeof note.source.chatId === "string" &&
+        typeof note.source.messageId === "string"
+          ? note.source
+          : undefined,
       created: Number.isFinite(Number(note.created))
         ? Number(note.created)
         : Date.parse(String(note.created)) || Date.now(),

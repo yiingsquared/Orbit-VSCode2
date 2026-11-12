@@ -585,14 +585,20 @@
         </div>
         <h2 id="memory-title">Orbit Memory</h2>
         <p class="dialog-description">
-          Your saved notes and archived conversations.
+          These memories are shared across all AI brands.
         </p>
+        <p
+          class="memory-learning-status"
+          id="memory-learning-status"
+          role="status"
+          hidden
+        ></p>
         <label class="memory-toggle"
-          ><input type="checkbox" id="include-memory" checked /> Include saved
-          notes in AI requests</label
+          ><input type="checkbox" id="include-memory" checked /> Use shared
+          memory in AI chats</label
         >
         <div class="memory-summary">
-          <span><span class="memory-count-text">0</span> saved notes</span
+          <span><span class="memory-count-text">0</span> memories</span
           ><span>Stored in this browser</span>
         </div>
         <div class="memory-items" id="memory-items"></div>
@@ -609,8 +615,8 @@
           </button>
         </form>
         <p class="memory-footnote">
-          Notes are stored in this browser. The latest 20 notes can be included
-          in AI requests when memory is enabled.
+          Important details are saved automatically. You can also add or delete
+          a memory at any time. Memories are stored in this browser.
         </p>
         <section class="memory-archives" aria-label="Archived conversations">
           <button
@@ -620,7 +626,7 @@
             aria-expanded="false"
             aria-controls="memory-archived-list"
           >
-            Archived
+            Archived chats
           </button>
           <div
             class="memory-archived-list"

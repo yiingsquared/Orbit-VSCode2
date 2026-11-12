@@ -1,3 +1,5 @@
+import { createProductDemoMotion, productDemoMarkup } from "./intro-demo.js";
+
 type IntroOptions = { onGetStarted: () => void };
 type DemoView = "chat" | "companion" | "memory" | "models";
 
@@ -78,8 +80,18 @@ function miniScreen(view: DemoView = "chat", simple = false): string {
   return `<div class="intro-mini-app${simple ? " is-simple" : ""}"><aside class="intro-mini-rail">${cat()}${rail}</aside><aside class="intro-mini-sidebar"><b>Chat</b><span class="intro-mini-new">＋ New Chat</span><small>Saved</small><i>Something to come back to</i><small>Recents</small>${sideItems.map((title) => `<i>${title}</i>`).join("")}<span class="intro-mini-memory-link">${glyph("memory")} Orbit Memory</span></aside><div class="intro-mini-top"><span>Orbit <i>/</i> ChatGPT</span><span class="intro-mini-top-actions"><i></i><i></i><i></i></span></div><div class="intro-mini-content" data-intro-screen-content>${content}</div><div class="intro-mini-composer"><span>✧ Ask anything</span><div><small>GPT-6.1 Sol⌄</small><i>⌕</i><b>${glyph("send")}</b></div></div></div>`;
 }
 
-function computer(extraClass = "", view: DemoView = "chat"): string {
-  return `<div class="intro-computer ${extraClass}" aria-hidden="true"><div class="intro-computer-lid"><span class="intro-computer-camera"></span><div class="intro-computer-screen">${miniScreen(view)}</div></div><div class="intro-computer-base"><span></span></div><div class="intro-computer-shadow"></div></div>`;
+function productScreen(view: DemoView): string {
+  return view === "companion" || view === "chat"
+    ? productDemoMarkup(view)
+    : miniScreen(view);
+}
+
+function computer(
+  extraClass = "",
+  view: DemoView = "chat",
+  animated = false,
+): string {
+  return `<div class="intro-computer ${extraClass}" aria-hidden="true"><div class="intro-computer-lid"><span class="intro-computer-camera"></span><div class="intro-computer-screen">${animated ? productScreen(view) : miniScreen(view)}</div></div><div class="intro-computer-base"><span></span></div><div class="intro-computer-shadow"></div></div>`;
 }
 
 function orbitCircle(): string {
@@ -109,19 +121,19 @@ function modelVisual(): string {
 
 const demoViews: Record<DemoView, { title: string; description: string }> = {
   chat: {
-    title: "A little space.<br />For your next big idea.",
+    title: "Ask from your window.<br />Hear back from your AI.",
     description:
-      "Ask a question, explore a thought, or pick up where you left off. Your conversations have a place in Orbit.",
+      "Type a message in your companion. Orbit sends it to your selected AI and brings the reply into your chat.",
   },
   companion: {
     title: "Stay in your window.<br />Keep Orbit close.",
     description:
-      "The Windows companion brings a small, familiar face to your work. Add the browser connection to share the active tab’s text.",
+      "Drag Orbit onto a window. It snaps into place and brings the current tab’s context into your conversation.",
   },
   memory: {
-    title: "Keep the useful parts.<br />Leave the rest.",
+    title: "Different AIs.<br />Shared memory.",
     description:
-      "See the notes you have saved in Orbit. Review them, use them, or delete them whenever you choose.",
+      "Orbit shares your saved memories with every connected AI, so you don’t have to repeat yourself. Review or delete them anytime.",
   },
   models: {
     title: "One home.<br />More possibilities.",
@@ -165,17 +177,16 @@ export function initIntro({ onGetStarted }: IntroOptions): void {
       <div class="intro-float-position intro-float-left" data-intro-parallax="0.06"><div class="intro-float-card intro-float-white">${providerIcon("openai")}<small>YOUR WORKSPACE</small><strong>One clear<br />place.</strong></div></div>
       <div class="intro-float-position intro-float-right" data-intro-parallax="-0.05"><div class="intro-float-card intro-float-mint">${cat()}<small>READY WHEN YOU ARE</small><strong>OpenAI<br /><span>Available now</span></strong></div></div>
       <div class="intro-float-position intro-float-bottom" data-intro-parallax="0.1"><div class="intro-float-card intro-float-blue">${glyph("memory")}<small>A LITTLE CONTEXT</small><strong>Keep the<br />good parts.</strong></div></div>
-      <div class="intro-hero-device">${computer("intro-computer-hero")}</div>
     </section>
 
     <section class="intro-demo intro-motion-scene" id="intro-demo" aria-labelledby="intro-demo-title">
-      <div class="intro-demo-device intro-reveal">${computer("intro-computer-demo")}</div>
-      <div class="intro-demo-copy intro-reveal"><h2 id="intro-demo-title">${demoViews.chat.title}</h2><p id="intro-demo-description">${demoViews.chat.description}</p></div>
+      <div class="intro-demo-device intro-reveal" id="intro-demo-panel" role="tabpanel" aria-labelledby="intro-demo-tab-companion" aria-describedby="intro-demo-description">${computer("intro-computer-demo", "companion", true)}</div>
+      <div class="intro-demo-copy intro-reveal"><h2 id="intro-demo-title">${demoViews.companion.title}</h2><p id="intro-demo-description">${demoViews.companion.description}</p></div>
       <div class="intro-demo-tabs" role="tablist" aria-label="Explore Orbit features">
-        <button class="is-selected" type="button" role="tab" aria-selected="true" data-intro-view="chat">${glyph("spark")} Chat</button>
-        <button type="button" role="tab" aria-selected="false" data-intro-view="companion">${glyph("window")} Companion</button>
-        <button type="button" role="tab" aria-selected="false" data-intro-view="memory">${glyph("memory")} Memory</button>
-        <button type="button" role="tab" aria-selected="false" data-intro-view="models">${glyph("plus")} Models</button>
+        <button class="is-selected" id="intro-demo-tab-companion" aria-controls="intro-demo-panel" type="button" role="tab" aria-selected="true" data-intro-view="companion">${glyph("window")} Companion</button>
+        <button id="intro-demo-tab-chat" aria-controls="intro-demo-panel" type="button" role="tab" aria-selected="false" data-intro-view="chat">${glyph("spark")} Chat</button>
+        <button id="intro-demo-tab-memory" aria-controls="intro-demo-panel" type="button" role="tab" aria-selected="false" data-intro-view="memory">${glyph("memory")} Memory</button>
+        <button id="intro-demo-tab-models" aria-controls="intro-demo-panel" type="button" role="tab" aria-selected="false" data-intro-view="models">${glyph("plus")} Models</button>
       </div>
     </section>
 
@@ -252,6 +263,7 @@ export function initIntro({ onGetStarted }: IntroOptions): void {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const screenAnimations = new Set<Animation>();
   let frame: number | null = null;
+  let demoOnScreen = false;
 
   function visible(): boolean {
     return !page.hidden && !document.hidden;
@@ -299,6 +311,7 @@ export function initIntro({ onGetStarted }: IntroOptions): void {
     const paused = !visible();
 
     page.classList.toggle("intro-is-paused", paused);
+    productMotion.setActive(!paused && demoOnScreen);
 
     for (const animation of screenAnimations) {
       if (paused) animation.pause();
@@ -351,11 +364,15 @@ export function initIntro({ onGetStarted }: IntroOptions): void {
   const demoDescription = page.querySelector<HTMLElement>(
     "#intro-demo-description",
   )!;
+  const demoPanel = page.querySelector<HTMLElement>("#intro-demo-panel")!;
+  const productMotion = createProductDemoMotion(demoScreen);
 
   function setDemo(view: DemoView): void {
-    demoScreen.innerHTML = miniScreen(view);
+    demoScreen.innerHTML = productScreen(view);
+    productMotion.reset();
     demoTitle.innerHTML = demoViews[view].title;
     demoDescription.textContent = demoViews[view].description;
+    demoPanel.setAttribute("aria-labelledby", `intro-demo-tab-${view}`);
 
     for (const tab of tabs) {
       const selected = tab.dataset.introView === view;
@@ -418,6 +435,14 @@ export function initIntro({ onGetStarted }: IntroOptions): void {
     },
     { root: page, threshold: 0.08 },
   );
+  const demoObserver = new IntersectionObserver(
+    (entries) => {
+      demoOnScreen = entries.some((entry) => entry.isIntersecting);
+      productMotion.setActive(visible() && demoOnScreen);
+    },
+    { root: page, threshold: 0.15 },
+  );
+  demoObserver.observe(demoPanel);
   const motionObserver = new IntersectionObserver(
     (entries) => {
       for (const entry of entries)

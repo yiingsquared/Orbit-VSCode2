@@ -1,5 +1,6 @@
 import { once } from "node:events";
 import { readConfig } from "./config.mjs";
+import { extractMemories, validateMemoryPayload } from "./shared-memory.mjs";
 import {
   providers,
   getProvider,
@@ -54,7 +55,7 @@ export function validatePayload(body) {
   }
 
   const memories = Array.isArray(body.memories)
-    ? body.memories.slice(0, 20)
+    ? body.memories.slice(0, 100)
     : [];
 
   if (memories.some((text) => typeof text !== "string" || text.length > 2000)) {
@@ -367,6 +368,57 @@ export async function handleApi(request, response, options = {}) {
       config,
       fetcher,
     );
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/memory/extract") {
+    if (!sameOrigin(request)) {
+      sendJson(response, 403, {
+        message: "Open Orbit before saving a memory.",
+      });
+      return;
+    }
+
+    if (!allowRequest(`memory:${request.socket.remoteAddress}`)) {
+      sendJson(response, 429, {
+        message: "Automatic memory will resume in a minute.",
+      });
+      return;
+    }
+
+    let data;
+
+    try {
+      data = validateMemoryPayload(await readJson(request));
+    } catch (error) {
+      sendJson(response, 400, { message: error.message });
+      return;
+    }
+
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 45000);
+
+    response.on("close", () => abort.abort());
+
+    try {
+      const memories = await extractMemories(
+        data,
+        config,
+        fetcher,
+        abort.signal,
+      );
+
+      if (!response.destroyed) sendJson(response, 200, { memories });
+    } catch {
+      if (!response.destroyed)
+        sendJson(response, 503, {
+          message:
+            "Automatic memory is temporarily unavailable. Your chat is saved.",
+        });
+    } finally {
+      clearTimeout(timer);
+    }
+
     return;
   }
 

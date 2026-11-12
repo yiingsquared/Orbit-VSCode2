@@ -246,9 +246,10 @@
 
 .intro-page .intro-hero {
   position: relative;
-  height: 100dvh;
-  min-height: 810px;
-  max-height: 1050px;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding-bottom: 180px;
   overflow: hidden;
   background: #fff;
 }
@@ -376,7 +377,7 @@
 }
 
 .intro-page .intro-float-bottom {
-  bottom: 75px;
+  bottom: 36px;
   left: calc(50% - 240px);
   z-index: 5;
   --intro-tilt: -12deg;
@@ -951,12 +952,364 @@
 
 /* Product demo */
 
+.intro-page .intro-desktop-demo {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: inline-size;
+  color: #313640;
+  background: radial-gradient(ellipse at 89% 9%, #faf7f2 0, transparent 55%), linear-gradient(130deg, #dfe9ed, #eaf0f0 55%, #e3e5ef);
+  font-size: 6px;
+  text-align: left;
+}
+
+.intro-page .intro-desktop-demo::before,
+.intro-page .intro-desktop-demo::after {
+  position: absolute;
+  right: -19%;
+  bottom: 6%;
+  width: 81%;
+  height: 73%;
+  border: 1px solid #ffffff80;
+  border-radius: 50%;
+  background: linear-gradient(150deg, #ffffff24, #cedde824);
+  content: "";
+  transform: rotate(-35deg);
+}
+
+.intro-page .intro-desktop-demo::after {
+  right: -29%;
+  bottom: 9%;
+}
+
+.intro-page .intro-desktop-shortcuts {
+  position: absolute;
+  top: 13%;
+  left: 3.5%;
+  z-index: 1;
+  display: grid;
+  gap: 3.5cqw;
+  color: #697783;
+  font-size: 1.2cqw;
+  text-align: center;
+}
+
+.intro-page .intro-desktop-shortcuts > span {
+  display: grid;
+  justify-items: center;
+  gap: .7cqw;
+}
+
+.intro-page .intro-desktop-shortcuts i {
+  display: grid;
+  place-items: center;
+  width: 4.8cqw;
+  height: 4.8cqw;
+  border: 1px solid #ffffff90;
+  border-radius: 1cqw;
+  color: #628bad;
+  background: linear-gradient(#f2f7fb, #dae8f3);
+  box-shadow: 0 2px 3px #697b9010;
+}
+
+.intro-page .intro-desktop-shortcuts > span + span i {
+  color: #a18c60;
+  background: linear-gradient(#fffbee, #f4ead1);
+}
+
+.intro-page .intro-desktop-demo svg:not(.intro-product-overlay) {
+  width: 2.1cqw;
+  height: 2.1cqw;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.intro-page .intro-desktop-shortcuts svg {
+  width: 3.3cqw;
+  height: 3.3cqw;
+}
+
+.intro-page .intro-desktop-window {
+  position: absolute;
+  top: 26.6667%;
+  left: 14.3333%;
+  z-index: 2;
+  width: 75.6667%;
+  height: 57.0667%;
+  overflow: hidden;
+  border: 1px solid #ffffffb0;
+  border-radius: 1.5cqw;
+  background: #fff;
+  box-shadow: 0 2.5cqw 5cqw #43526722, 0 0 0 1px #54667916;
+}
+
+.intro-page .intro-desktop-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 3.9cqw;
+  padding-left: 1.6cqw;
+  color: #6c7481;
+  background: #f4f6f8;
+  font-size: 1.2cqw;
+}
+
+.intro-page .intro-desktop-titlebar > span {
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+}
+
+.intro-page .intro-desktop-titlebar > span svg {
+  width: 1.7cqw;
+  height: 1.7cqw;
+  color: #bb994e;
+}
+
+.intro-page .intro-desktop-window-controls {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  color: #838a94;
+}
+
+.intro-page .intro-desktop-window-controls > i {
+  display: grid;
+  place-items: center;
+  width: 5cqw;
+  font-size: 1.7cqw;
+  font-style: normal;
+}
+
+.intro-page .intro-desktop-menubar {
+  display: flex;
+  align-items: center;
+  gap: 1.8cqw;
+  height: 2.8cqw;
+  padding: 0 1.8cqw;
+  border-bottom: 1px solid #f0f1f4;
+  color: #8e949d;
+  font-size: 1.1cqw;
+}
+
+.intro-page .intro-desktop-menubar > i {
+  margin-left: auto;
+  font-size: .95cqw;
+  font-style: normal;
+  color: #b0b5bc;
+}
+
+.intro-page .intro-desktop-document {
+  padding: 2.3cqw 4.8cqw;
+}
+
+.intro-page .intro-desktop-document > small {
+  color: #a5aab1;
+  font-size: 1cqw;
+  letter-spacing: .12em;
+}
+
+.intro-page .intro-desktop-document > h3 {
+  margin: 1.1cqw 0 1.2cqw;
+  font-size: 4cqw;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -.04em;
+}
+
+.intro-page .intro-desktop-document > p {
+  color: #979da6;
+  font-size: 1.3cqw;
+  line-height: 1.6;
+}
+
+.intro-page .intro-desktop-note-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5cqw;
+  margin-top: 2cqw;
+}
+
+.intro-page .intro-desktop-note-cards > div {
+  display: grid;
+  grid-template-columns: 2.4cqw 1fr;
+  gap: .6cqw;
+  padding: 1.5cqw;
+  border-radius: 1cqw;
+  color: #66877e;
+  background: #edf4f1;
+}
+
+.intro-page .intro-desktop-note-cards > div + div {
+  color: #a28770;
+  background: #f8f0e7;
+}
+
+.intro-page .intro-desktop-note-cards strong {
+  font-size: 1.25cqw;
+  font-weight: 500;
+}
+
+.intro-page .intro-desktop-note-cards small {
+  grid-column: 2;
+  font-size: 1cqw;
+  opacity: .75;
+}
+
+.intro-page .intro-desktop-taskbar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 6.6667%;
+  border-top: 1px solid #ffffff90;
+  background: #f3f6f8b8;
+}
+
+.intro-page .intro-desktop-taskbar > div {
+  display: flex;
+  align-items: center;
+  gap: 2.4cqw;
+}
+
+.intro-page .intro-desktop-taskbar span {
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: #a39060;
+}
+
+.intro-page .intro-desktop-start svg {
+  fill: #73a6cf;
+  stroke: none;
+}
+
+.intro-page .intro-desktop-taskbar-orbit::after {
+  position: absolute;
+  bottom: -.8cqw;
+  width: .8cqw;
+  height: .3cqw;
+  border-radius: 2px;
+  background: #a9afb9;
+  content: "";
+}
+
+.intro-page .intro-desktop-taskbar img {
+  width: 2.5cqw;
+  height: 2.2cqw;
+}
+
+.intro-page .intro-desktop-taskbar > small {
+  position: absolute;
+  right: 2.4cqw;
+  color: #8a939f;
+  font-size: 1.05cqw;
+}
+
+.intro-page .intro-desktop-ai {
+  position: absolute;
+  top: 84.8%;
+  right: 8.5%;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 1.4cqw;
+  width: 30%;
+  padding: .5cqw 1.3cqw;
+  border: 1px solid #ffffff;
+  border-radius: 1.5cqw;
+  background: #ffffffd9;
+  box-shadow: 0 1cqw 2cqw #6c7c8c12;
+}
+
+.intro-page .intro-desktop-ai > img {
+  width: 3.2cqw;
+  height: 3.2cqw;
+  filter: brightness(0);
+}
+
+.intro-page .intro-desktop-ai > div {
+  position: relative;
+  flex: 1;
+}
+
+.intro-page .intro-desktop-ai strong {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 1.25cqw;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.intro-page .intro-desktop-ai strong > span {
+  display: flex;
+  color: #6c9d84;
+}
+
+.intro-page .intro-desktop-ai small {
+  display: block;
+  min-height: 1.6cqw;
+  color: #959ca5;
+  font-size: 1.1cqw;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.intro-page .intro-desktop-ai-response {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.intro-page .intro-desktop-thinking {
+  position: absolute;
+  bottom: .4cqw;
+  display: flex;
+  gap: .5cqw;
+}
+
+.intro-page .intro-desktop-thinking > i {
+  width: .5cqw;
+  height: .5cqw;
+  border-radius: 50%;
+  background: #b0b9c3;
+}
+
+.intro-page .intro-product-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: none;
+  font-family: Inter, Arial, sans-serif;
+  pointer-events: none;
+}
+
+.intro-page .intro-product-draft,
+.intro-page .intro-product-enter {
+  fill: #fff;
+  font-size: 12px;
+}
+
+
 .intro-page .intro-demo {
   display: flex;
   flex-direction: column;
   align-items: center;
   min-height: 740px;
-  padding: 114px 24px 92px;
+  padding: 48px 24px 92px;
   scroll-margin-top: 30px;
   text-align: center;
 }
@@ -2314,8 +2667,9 @@
     font-size: 10px;
   }
   .intro-page .intro-hero {
-    min-height: 780px;
-    max-height: 900px;
+    min-height: 0;
+    max-height: none;
+    padding-bottom: 164px;
   }
   .intro-page .intro-hero-center {
     padding-top: 124px;
@@ -2375,7 +2729,7 @@
     font-size: 3px;
   }
   .intro-page .intro-float-bottom {
-    bottom: 76px;
+    bottom: 36px;
     left: 14px;
   }
   .intro-page .intro-hero-device {
@@ -2467,7 +2821,7 @@
   }
   .intro-page .intro-demo {
     min-height: 670px;
-    padding: 110px 20px 70px;
+    padding: 48px 20px 70px;
   }
   .intro-page .intro-demo-device {
     width: min(430px, 94vw);
