@@ -50,6 +50,7 @@ namespace OrbitInstaller
                 var shortcut = Path.Combine(shortcutDirectory, "Orbit.lnk");
                 if (File.Exists(shortcut)) File.Delete(shortcut);
                 if (Directory.Exists(shortcutDirectory) && Directory.GetFileSystemEntries(shortcutDirectory).Length == 0) Directory.Delete(shortcutDirectory);
+                OrbitDesktop.ProtocolRegistration.Unregister(Path.Combine(directory, "Orbit.exe"));
                 Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\OrbitCompanion", false);
                 MessageBox.Show("Orbit Companion was removed", "Orbit", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }

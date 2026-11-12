@@ -33,12 +33,15 @@ type Status = {
   contextFresh: boolean;
 };
 
-type CompanionOptions = {
+export type InitCompanionOptions = {
+  enabled?: () => boolean;
   getSelection: () => Selection;
   isBusy: () => boolean;
   onContext?: (context: CompanionContext) => Promise<void>;
   onMessage: (message: MessageEvent) => Promise<Reply>;
 };
+
+export type CompanionOptions = InitCompanionOptions;
 
 type SavedReply = Reply & {
   messageId: number;
@@ -47,6 +50,8 @@ type SavedReply = Reply & {
 };
 let selectionChanged = (): void => {};
 let stopPrevious = (): void => {};
+let resetCurrentSession = (): void => {};
+let canPublishReplies = (): boolean => false;
 
 export type CompanionReplyIdentity = {
   chatId: string;
@@ -170,6 +175,7 @@ export function createCompanionReplyNotifier(
       try {
         if (entry.read && !read.has(id)) {
           await send("reply-read", identity);
+          if (!transport || connection !== generation) return;
           read.add(id);
           save();
         }
@@ -180,6 +186,7 @@ export function createCompanionReplyNotifier(
             text: entry.text,
             read: entry.read || read.has(id),
           });
+          if (!transport || connection !== generation) return;
           published.add(id);
           save();
         }
@@ -197,10 +204,11 @@ export function createCompanionReplyNotifier(
     if (running) return running;
     if (!transport || !entries.size) return Promise.resolve();
 
-    running = drain().finally(() => {
-      running = null;
+    const operation = drain().finally(() => {
+      if (running === operation) running = null;
       if (transport && entries.size) schedule();
     });
+    running = operation;
     return running;
   }
 
@@ -248,6 +256,18 @@ export function createCompanionReplyNotifier(
       if (retry) clearTimeout(retry);
       retry = undefined;
     },
+    reset(): void {
+      connection += 1;
+      transport = null;
+      clientId = "";
+      running = null;
+      if (retry) clearTimeout(retry);
+      retry = undefined;
+      entries.clear();
+      read.clear();
+      published.clear();
+      save();
+    },
     flush,
   };
 }
@@ -265,13 +285,40 @@ const replyNotifications = createCompanionReplyNotifier(notificationStorage());
 export function publishCompanionReply(
   notice: CompanionReplyNotice,
 ): Promise<void> {
-  return replyNotifications.publish(notice);
+  return canPublishReplies()
+    ? replyNotifications.publish(notice)
+    : Promise.resolve();
 }
 
 export function markCompanionReplyRead(
   identity: CompanionReplyIdentity,
 ): Promise<void> {
-  return replyNotifications.read(identity);
+  return canPublishReplies()
+    ? replyNotifications.read(identity)
+    : Promise.resolve();
+}
+
+export function resetCompanionSession(): void {
+  replyNotifications.reset();
+
+  try {
+    const storage =
+      typeof sessionStorage === "undefined"
+        ? notificationStorage()
+        : sessionStorage;
+
+    for (const key of [
+      "orbit.companion.client.v1",
+      "orbit.companion.outbox.v1",
+      "orbit.companion.notifications.v1",
+    ]) {
+      storage?.removeItem(key);
+    }
+  } catch {
+    // Current transport still resets
+  }
+
+  resetCurrentSession();
 }
 
 // Selection changes from Orbit
@@ -280,7 +327,7 @@ export function notifyCompanionSelection(): void {
   selectionChanged();
 }
 
-export function initCompanion(options: CompanionOptions): () => void {
+export function initCompanion(options: InitCompanionOptions): () => void {
   stopPrevious();
 
   const statusElement = document.getElementById("companion-status");
@@ -297,15 +344,22 @@ export function initCompanion(options: CompanionOptions): () => void {
   const companionDialog = document.getElementById(
     "companion-dialog",
   ) as HTMLDialogElement | null;
-  const clientId = savedClientId();
+  let clientId = "";
   const completed = new Map<number, SavedReply>();
+  const lifecycle = new AbortController();
+  const listener = { signal: lifecycle.signal };
 
   let cursor = 0;
   let instanceId = "";
   let paused = false;
   let hidden = false;
   let polling = false;
-  let stopped = false;
+  let pollAgain = false;
+  let stopped = true;
+  let disposed = false;
+  let sessionSuspended = false;
+  let transportGeneration = 0;
+  let notificationsConnected = false;
   let pollTimer: ReturnType<typeof setTimeout>;
   let heartbeat: ReturnType<typeof setInterval>;
   let bridgeAbort = new AbortController();
@@ -359,7 +413,45 @@ export function initCompanion(options: CompanionOptions): () => void {
     }
   }
 
+  function ensureClientId(): string {
+    clientId ||= savedClientId();
+    return clientId;
+  }
+
+  function routeEnabled(): boolean {
+    try {
+      return options.enabled?.() !== false;
+    } catch {
+      return false;
+    }
+  }
+
+  function canProcessMessages(): boolean {
+    return !disposed && !stopped && !sessionSuspended && routeEnabled();
+  }
+
+  function syncNotifications(): void {
+    const enabled = canProcessMessages();
+
+    if (enabled && !notificationsConnected) {
+      notificationsConnected = true;
+      replyNotifications.connect((route, body) => {
+        if (!canProcessMessages())
+          return Promise.reject(
+            new DOMException("Companion routing is paused", "AbortError"),
+          );
+        return request(route, body);
+      }, ensureClientId());
+    } else if (!enabled && notificationsConnected) {
+      notificationsConnected = false;
+      replyNotifications.disconnect();
+    }
+  }
+
   async function request<T>(route: string, body?: unknown): Promise<T> {
+    if (disposed || stopped)
+      throw new DOMException("Companion transport stopped", "AbortError");
+
     const response = await fetch(`/api/companion/${route}`, {
       method: body === undefined ? "GET" : "POST",
       headers:
@@ -379,6 +471,7 @@ export function initCompanion(options: CompanionOptions): () => void {
   }
 
   function showStatus(text: string): void {
+    if (disposed || stopped) return;
     if (statusElement) {
       statusElement.textContent = text;
       statusElement.hidden = !text;
@@ -398,6 +491,7 @@ export function initCompanion(options: CompanionOptions): () => void {
   let installerId = "";
 
   function renderDownload(): void {
+    if (disposed) return;
     if (downloadLabel)
       downloadLabel.textContent = downloading
         ? "Downloading…"
@@ -411,10 +505,15 @@ export function initCompanion(options: CompanionOptions): () => void {
   }
 
   const installerReady = downloadButton
-    ? fetch("/downloads/installer.json", { cache: "no-store" })
+    ? fetch("/downloads/installer.json", {
+        cache: "no-store",
+        signal: lifecycle.signal,
+      })
         .then(async (response) => {
+          if (disposed) return;
           if (!response.ok) throw new Error("Installer metadata unavailable");
           const metadata = await response.json();
+          if (disposed) return;
           if (!/^[a-f0-9]{64}$/.test(metadata.sha256)) return;
           installerId = metadata.sha256;
           try {
@@ -429,54 +528,83 @@ export function initCompanion(options: CompanionOptions): () => void {
         .catch(() => {})
     : Promise.resolve();
 
-  downloadButton?.addEventListener("click", (event) => {
-    event.preventDefault();
-    if (downloading) return;
-    downloading = true;
-    renderDownload();
+  downloadButton?.addEventListener(
+    "click",
+    (event) => {
+      event.preventDefault();
+      if (downloading || disposed || stopped) return;
+      const generation = transportGeneration;
+      const signal = bridgeAbort.signal;
+      downloading = true;
+      renderDownload();
 
-    void (async () => {
-      await installerReady;
-      const response = await fetch("/api/companion/installer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-        credentials: "same-origin",
-        cache: "no-store",
-      });
-      if (!response.ok)
-        throw new Error("Could not download Orbit. Please try again.");
-      const file = await response.blob();
-      if (!file.size)
-        throw new Error("The installer download was empty. Please try again.");
-
-      const address = URL.createObjectURL(file);
-      const link = document.createElement("a");
-      link.href = address;
-      link.download = "Orbit-Setup.exe";
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(address), 1000);
-      downloaded = true;
-      try {
-        if (installerId)
-          window.localStorage.setItem(
-            "orbit.companion.download.v1",
-            installerId,
+      void (async () => {
+        await installerReady;
+        if (disposed || stopped || generation !== transportGeneration) return;
+        const response = await fetch("/api/companion/installer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+          credentials: "same-origin",
+          cache: "no-store",
+          signal,
+        });
+        if (!response.ok)
+          throw new Error("Could not download Orbit. Please try again.");
+        const file = await response.blob();
+        if (disposed || stopped || generation !== transportGeneration) return;
+        if (!file.size)
+          throw new Error(
+            "The installer download was empty. Please try again.",
           );
-      } catch {
-        // Download remains available
-      }
-    })()
-      .catch((error) =>
-        showStatus(error.message || "Could not download Orbit."),
-      )
-      .finally(() => {
-        downloading = false;
-        renderDownload();
-      });
-  });
+
+        const address = URL.createObjectURL(file);
+        const link = document.createElement("a");
+        link.href = address;
+        link.download = "Orbit-Setup.exe";
+        link.hidden = true;
+        document.body.append(link);
+        try {
+          link.click();
+        } finally {
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(address), 1000);
+        }
+        downloaded = true;
+        try {
+          if (installerId)
+            window.localStorage.setItem(
+              "orbit.companion.download.v1",
+              installerId,
+            );
+        } catch {
+          // Download remains available
+        }
+        window.dispatchEvent(
+          new CustomEvent("orbit:companion-downloaded", {
+            detail: { installerId: installerId || null },
+          }),
+        );
+      })()
+        .catch((error) => {
+          if (
+            !disposed &&
+            generation === transportGeneration &&
+            !signal.aborted
+          )
+            showStatus(error.message || "Could not download Orbit.");
+        })
+        .finally(() => {
+          if (generation !== transportGeneration || disposed) return;
+          downloading = false;
+          renderDownload();
+        });
+    },
+    listener,
+  );
 
   function renderControls(): void {
+    if (disposed) return;
     const available = downloaded || desktopConnected;
     if (controlsPanel) controlsPanel.hidden = !available;
     if (hideButton) {
@@ -497,12 +625,16 @@ export function initCompanion(options: CompanionOptions): () => void {
   }
 
   async function updateSelection(takeControl = false): Promise<void> {
+    if (!canProcessMessages()) {
+      syncNotifications();
+      return;
+    }
     const selection = options.getSelection();
 
     if (stopped || !selection.provider || !selection.model) return;
 
     await request("selection", {
-      clientId,
+      clientId: ensureClientId(),
       ...selection,
       visible: document.visibilityState === "visible",
       focused: document.hasFocus(),
@@ -511,7 +643,10 @@ export function initCompanion(options: CompanionOptions): () => void {
   }
 
   async function refreshStatus(): Promise<void> {
+    const generation = transportGeneration;
     const status = await request<Status>("status");
+
+    if (disposed || stopped || generation !== transportGeneration) return;
 
     paused = status.paused;
     hidden = status.hidden === true;
@@ -525,6 +660,7 @@ export function initCompanion(options: CompanionOptions): () => void {
   }
 
   async function acknowledge(eventId: number): Promise<void> {
+    if (!canProcessMessages()) return;
     await request("ack", { clientId, eventId });
     cursor = eventId;
   }
@@ -540,6 +676,8 @@ export function initCompanion(options: CompanionOptions): () => void {
   }
 
   async function processEvent(event: InboxEvent): Promise<boolean> {
+    const generation = transportGeneration;
+    if (!canProcessMessages()) return false;
     if (event.type === "context-invalidated") {
       await acknowledge(event.id);
       return true;
@@ -548,6 +686,8 @@ export function initCompanion(options: CompanionOptions): () => void {
     if (event.type === "context") {
       if (event.context) {
         await deliverContext(event.context);
+        if (!canProcessMessages() || generation !== transportGeneration)
+          return false;
       }
 
       await acknowledge(event.id);
@@ -566,9 +706,16 @@ export function initCompanion(options: CompanionOptions): () => void {
 
       if (event.context) {
         await deliverContext(event.context);
+        if (!canProcessMessages() || generation !== transportGeneration)
+          return false;
       }
 
-      if (options.isBusy() || stopped) return false;
+      if (
+        options.isBusy() ||
+        !canProcessMessages() ||
+        generation !== transportGeneration
+      )
+        return false;
 
       let response: Reply;
 
@@ -588,6 +735,9 @@ export function initCompanion(options: CompanionOptions): () => void {
         };
       }
 
+      if (!canProcessMessages() || generation !== transportGeneration)
+        return false;
+
       result = {
         messageId: event.id,
         text: response.text || "",
@@ -598,6 +748,9 @@ export function initCompanion(options: CompanionOptions): () => void {
       completed.set(event.id, result);
       saveOutbox();
     }
+
+    if (!canProcessMessages() || generation !== transportGeneration)
+      return false;
 
     await request("reply", {
       clientId,
@@ -615,14 +768,25 @@ export function initCompanion(options: CompanionOptions): () => void {
     if (stopped || polling) return;
 
     polling = true;
+    const generation = transportGeneration;
+    syncNotifications();
 
     try {
+      if (!canProcessMessages()) {
+        await refreshStatus();
+        return;
+      }
+
       const inbox = await request<{
         instanceId: string;
         events: InboxEvent[];
         cursor: number;
         active: boolean;
-      }>(`events?clientId=${encodeURIComponent(clientId)}&after=${cursor}`);
+      }>(
+        `events?clientId=${encodeURIComponent(ensureClientId())}&after=${cursor}`,
+      );
+
+      if (!canProcessMessages() || generation !== transportGeneration) return;
 
       if (instanceId !== inbox.instanceId) {
         instanceId = inbox.instanceId;
@@ -636,49 +800,74 @@ export function initCompanion(options: CompanionOptions): () => void {
 
       if (inbox.active) {
         for (const event of inbox.events) {
-          if (stopped || !(await processEvent(event))) break;
+          if (
+            !canProcessMessages() ||
+            generation !== transportGeneration ||
+            !(await processEvent(event))
+          )
+            break;
         }
       }
 
       if (inbox.cursor < cursor && !inbox.events.length) cursor = inbox.cursor;
       if (++statusCount % 4 === 0) await refreshStatus();
     } catch {
-      if (!stopped) showStatus("Orbit is reconnecting to the companion…");
+      if (!stopped && generation === transportGeneration)
+        showStatus("Orbit is reconnecting to the companion…");
     } finally {
-      polling = false;
-      if (!stopped)
-        pollTimer = setTimeout(() => {
-          void poll();
-        }, 1200);
+      if (generation === transportGeneration) polling = false;
+      if (!stopped && !disposed && generation === transportGeneration)
+        pollTimer = setTimeout(
+          () => {
+            void poll();
+          },
+          pollAgain ? 0 : 1200,
+        );
+      if (generation === transportGeneration) pollAgain = false;
     }
   }
 
   function onFocus(): void {
+    syncNotifications();
     void updateSelection(true).catch(() => {});
   }
 
   function onSelection(): void {
+    if (disposed) return;
+    if (routeEnabled()) sessionSuspended = false;
+    if (stopped) start();
+    syncNotifications();
     void updateSelection(document.hasFocus()).catch(() => {});
+    clearTimeout(pollTimer);
+    if (polling) pollAgain = true;
+    else void poll();
   }
 
   function stop(): void {
     stopped = true;
+    transportGeneration += 1;
+    polling = false;
+    pollAgain = false;
     clearTimeout(pollTimer);
     clearInterval(heartbeat);
     bridgeAbort.abort();
     replyNotifications.disconnect();
+    notificationsConnected = false;
   }
 
   function start(): void {
+    if (disposed || !stopped) return;
     stopped = false;
+    transportGeneration += 1;
     bridgeAbort = new AbortController();
-    replyNotifications.connect(request, clientId);
+    syncNotifications();
     void updateSelection(document.hasFocus()).catch(() => {});
     void refreshStatus().catch(() =>
       showStatus("Open Orbit to connect the companion"),
     );
     void poll();
     heartbeat = setInterval(() => {
+      syncNotifications();
       void updateSelection().catch(() => {});
     }, 5000);
   }
@@ -687,29 +876,37 @@ export function initCompanion(options: CompanionOptions): () => void {
     if (event.persisted && stopped) start();
   }
 
-  hideButton?.addEventListener("click", () => {
-    hideButton.disabled = true;
+  hideButton?.addEventListener(
+    "click",
+    () => {
+      hideButton.disabled = true;
 
-    void request("visibility", { hidden: !hidden })
-      .then(refreshStatus)
-      .catch((error) =>
-        showStatus(error.message || "Could not change companion visibility."),
-      )
-      .finally(renderControls);
-  });
+      void request("visibility", { hidden: !hidden })
+        .then(refreshStatus)
+        .catch((error) =>
+          showStatus(error.message || "Could not change companion visibility."),
+        )
+        .finally(renderControls);
+    },
+    listener,
+  );
 
-  pauseButton?.addEventListener("click", () => {
-    pauseButton.disabled = true;
+  pauseButton?.addEventListener(
+    "click",
+    () => {
+      pauseButton.disabled = true;
 
-    void request("pause", { paused: !paused })
-      .then(refreshStatus)
-      .catch((error) =>
-        showStatus(error.message || "Could not change capture state."),
-      )
-      .finally(() => {
-        renderControls();
-      });
-  });
+      void request("pause", { paused: !paused })
+        .then(refreshStatus)
+        .catch((error) =>
+          showStatus(error.message || "Could not change capture state."),
+        )
+        .finally(() => {
+          renderControls();
+        });
+    },
+    listener,
+  );
 
   function quitCompanion(): void {
     const buttons = [hideButton, pauseButton, quitButton];
@@ -725,23 +922,47 @@ export function initCompanion(options: CompanionOptions): () => void {
       });
   }
 
-  quitButton?.addEventListener("click", quitCompanion);
-  companionDialog?.addEventListener("toggle", () => {
-    if (companionDialog.open) void refreshStatus().catch(() => {});
-  });
+  quitButton?.addEventListener("click", quitCompanion, listener);
+  companionDialog?.addEventListener(
+    "toggle",
+    () => {
+      if (companionDialog.open) void refreshStatus().catch(() => {});
+    },
+    listener,
+  );
 
   selectionChanged = onSelection;
-  window.addEventListener("focus", onFocus);
-  window.addEventListener("pagehide", stop);
-  window.addEventListener("pageshow", resume);
+  canPublishReplies = canProcessMessages;
+  window.addEventListener("focus", onFocus, listener);
+  window.addEventListener("pagehide", stop, listener);
+  window.addEventListener("pageshow", resume, listener);
   start();
 
-  stopPrevious = () => {
+  const resetSession = (): void => {
     stop();
-    window.removeEventListener("focus", onFocus);
-    window.removeEventListener("pagehide", stop);
-    window.removeEventListener("pageshow", resume);
+    sessionSuspended = true;
+    clientId = "";
+    completed.clear();
+    cursor = 0;
+    instanceId = "";
+    statusCount = 0;
+    downloading = false;
+    start();
+    renderDownload();
   };
+  resetCurrentSession = resetSession;
 
-  return stopPrevious;
+  const cleanup = (): void => {
+    if (disposed) return;
+    disposed = true;
+    stop();
+    lifecycle.abort();
+    if (selectionChanged === onSelection) selectionChanged = () => {};
+    if (resetCurrentSession === resetSession) resetCurrentSession = () => {};
+    if (canPublishReplies === canProcessMessages)
+      canPublishReplies = () => false;
+  };
+  stopPrevious = cleanup;
+
+  return cleanup;
 }

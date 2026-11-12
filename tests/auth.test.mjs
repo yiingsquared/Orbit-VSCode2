@@ -487,7 +487,7 @@ test("Google ID token validation checks signatures, audience, nonce, issuer, ver
   );
 });
 
-test("complete Google callback verifies identity and creates a session without exposing tokens", async () => {
+test("Google callback distinguishes a newly created account from an existing Google login without exposing tokens", async () => {
   let nonce;
   let verifier;
 
@@ -534,7 +534,10 @@ test("complete Google callback verifies identity and creates a session without e
       },
     );
 
-    assert.equal(callback.headers.get("location"), "/?auth=success");
+    assert.equal(
+      callback.headers.get("location"),
+      "/?auth=success&new_account=1",
+    );
     assert.equal(
       createHash("sha256").update(verifier).digest("base64url"),
       authorization.searchParams.get("code_challenge"),
@@ -560,6 +563,42 @@ test("complete Google callback verifies identity and creates a session without e
     );
 
     assert.equal(replay.headers.get("location"), "/?auth_error=invalid_state");
+
+    const loginStart = await post(base, "/api/auth/google");
+    const loginAuthorization = new URL((await loginStart.json()).url);
+    const loginCookie = cookieFrom(loginStart, "orbit_oauth");
+
+    nonce = loginAuthorization.searchParams.get("nonce");
+
+    const existing = await fetch(
+      base +
+        `/api/auth/google/callback?state=${loginAuthorization.searchParams.get("state")}&code=existing-account`,
+      {
+        headers: { Cookie: loginCookie },
+        redirect: "manual",
+      },
+    );
+
+    assert.equal(existing.headers.get("location"), "/?auth=success");
+    assert.equal(
+      new URL(existing.headers.get("location"), base).searchParams.has(
+        "new_account",
+      ),
+      false,
+    );
+    assert.equal(
+      store.db.prepare("SELECT COUNT(*) AS count FROM users").get().count,
+      1,
+    );
+
+    const existingSession = await fetch(base + "/api/auth/session", {
+      headers: { Cookie: cookieFrom(existing) },
+    });
+
+    assert.equal(
+      (await existingSession.json()).user.id,
+      JSON.parse(text).user.id,
+    );
   });
 });
 

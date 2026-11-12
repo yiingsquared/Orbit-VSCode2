@@ -17,6 +17,7 @@ namespace OrbitDesktop
             if (args.Length == 1 && args[0] == "--qa-window") return QaWindow.Run();
             if (args.Length == 1 && args[0] == "--qa-window-no-backdrop") return QaWindow.Run(false);
             if (args.Length == 4 && args[0] == "--bridge-test") return BridgeTest(args);
+            if (args.Length == 5 && args[0] == "--activation-test") return ActivationTest(args);
             if (args.Length == 2 && args[0] == "--render-launch-preview")
             {
                 var renderer = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -29,6 +30,16 @@ namespace OrbitDesktop
                 renderer.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 using (var client = new BridgeClient(false)) new PetWindow(client, true).RenderPreview(args[1]);
                 return 0;
+            }
+
+            // Handoff before the running-instance check
+
+            if (args.Length > 0 && args[0].StartsWith("orbit-companion:", StringComparison.OrdinalIgnoreCase))
+            {
+                System.Collections.Generic.Dictionary<string, object> grant;
+                if (args.Length != 1 || !InstallBootstrap.TryParseLaunch(args[0], out grant)) return 2;
+                try { InstallBootstrap.Save(InstallBootstrap.DefaultGrantPath, grant); }
+                catch { return 1; }
             }
 
             bool first;
@@ -80,9 +91,10 @@ namespace OrbitDesktop
                 && VisibilityChecks()
                 && HomePullChecks()
                 && BootstrapChecks()
+                && RelaunchChecks()
                 && AttachmentChecks();
 
-            if (args.Length > 1) File.WriteAllText(args[1], valid ? "PASS: fixed home, elastic release and return, latched detachment, immediate hover, exact cat silhouette, hidden-window recovery, protected installation, context heartbeat, focus, send guard, draft recovery, occlusion, and website controls" : "FAIL");
+            if (args.Length > 1) File.WriteAllText(args[1], valid ? "PASS: fixed home, elastic release and return, latched detachment, immediate hover, exact cat silhouette, hidden-window recovery, protected installation, strict relaunch URL, quoted protocol ownership, context heartbeat, focus, send guard, draft recovery, occlusion, and website controls" : "FAIL");
             return valid ? 0 : 1;
         }
 
@@ -143,6 +155,12 @@ namespace OrbitDesktop
                 InstallBootstrap.Save(protectedFile, grant);
                 if (System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(protectedFile)).Contains(new string('a', 43))) return false;
                 if (BridgeClient.Text(InstallBootstrap.Load(protectedFile), "ticket") != new string('a', 43)) return false;
+                var newer = new System.Collections.Generic.Dictionary<string, object> { { "baseUrl", "http://127.0.0.1:4316" }, { "ticket", new string('b', 43) } };
+                InstallBootstrap.Save(protectedFile, newer);
+                InstallBootstrap.Remove(protectedFile, grant);
+                if (BridgeClient.Text(InstallBootstrap.Load(protectedFile), "ticket") != new string('b', 43)) return false;
+                InstallBootstrap.Remove(protectedFile, newer);
+                if (File.Exists(protectedFile)) return false;
                 File.AppendAllText(file, "invalid footer");
                 if (InstallBootstrap.ReadExecutable(file) != null) return false;
                 return !InstallBootstrap.ValidAddress("http://example.com:4316")
@@ -155,6 +173,28 @@ namespace OrbitDesktop
                 if (File.Exists(file)) File.Delete(file);
                 if (File.Exists(protectedFile)) File.Delete(protectedFile);
             }
+        }
+
+        private static bool RelaunchChecks()
+        {
+            System.Collections.Generic.Dictionary<string, object> grant;
+            var ticket = new string('r', 43);
+            var launch = "orbit-companion://launch?baseUrl=http%3A%2F%2F127.0.0.1%3A4316&ticket=" + ticket;
+            if (!InstallBootstrap.TryParseLaunch(launch, out grant) || BridgeClient.Text(grant, "ticket") != ticket) return false;
+            foreach (var invalid in new[] {
+                launch.Replace("orbit-companion:", "https:"), launch.Replace("//launch?", "//other?"),
+                launch.Replace("//launch?", "//launch/private?"), launch + "#fragment", launch + "&extra=yes",
+                launch + "&ticket=" + ticket, launch.Replace("4316", "4330"),
+                launch.Replace("127.0.0.1", "localhost"), launch.Replace("127.0.0.1", "127.1"),
+                launch.Replace("ticket=" + ticket, "ticket=short"), launch.Replace("//launch?", "//user@launch?"),
+                launch + "%0A", launch.Replace("4316&", "4316%0A&")
+            }) if (InstallBootstrap.TryParseLaunch(invalid, out grant)) return false;
+
+            var executable = Path.Combine(Path.GetTempPath(), "Orbit synthetic path", "Orbit.exe");
+            return ProtocolRegistration.Command(executable) == "\"" + Path.GetFullPath(executable) + "\" \"%1\""
+                && ProtocolRegistration.Owned(ProtocolRegistration.Command(executable), executable, executable)
+                && !ProtocolRegistration.Owned(ProtocolRegistration.Command(executable), executable, executable + ".other")
+                && !ProtocolRegistration.Owned("another.exe \"%1\"", executable, executable);
         }
 
         private static bool ControlChecks()
@@ -175,11 +215,15 @@ namespace OrbitDesktop
                 File.WriteAllText(path, "Synthetic isolated configuration");
                 using (var client = new BridgeClient(false, path))
                 {
-                    client.Forget();
-                    return !client.Configured && !File.Exists(path);
+                    var pending = new System.Collections.Generic.Dictionary<string, object> { { "baseUrl", "http://127.0.0.1:4316" }, { "ticket", new string('s', 43) } };
+                    InstallBootstrap.Save(path + ".bootstrap", pending);
+                    state["paired"] = false;
+                    state["signOut"] = true;
+                    client.ApplyControl(state);
+                    return !client.Configured && !File.Exists(path) && !File.Exists(path + ".bootstrap");
                 }
             }
-            finally { if (File.Exists(path)) File.Delete(path); }
+            finally { if (File.Exists(path)) File.Delete(path); if (File.Exists(path + ".bootstrap")) File.Delete(path + ".bootstrap"); }
         }
 
         private static bool AttachmentChecks()
@@ -214,6 +258,34 @@ namespace OrbitDesktop
                 catch (Exception issue) { MessageBox.Show(issue.Message, "Orbit QA pairing"); return 1; }
 
                 return InteractionQaWindow.Run(client, network, config + ".qa.log");
+            }
+        }
+
+        private static int ActivationTest(string[] args)
+        {
+            var config = Path.GetFullPath(args[4]);
+            if (String.Equals(config, Path.GetFullPath(BridgeClient.ConfigPath), StringComparison.OrdinalIgnoreCase)) return 2;
+            try
+            {
+                using (var client = new BridgeClient(false, config))
+                {
+                    for (int index = 1; index <= 2; index++)
+                    {
+                        System.Collections.Generic.Dictionary<string, object> grant;
+                        if (!InstallBootstrap.TryParseLaunch(args[index], out grant)) throw new InvalidOperationException("Invalid synthetic relaunch URL");
+                        InstallBootstrap.Save(config + ".bootstrap", grant);
+                        if (!client.ActivateInstall().GetAwaiter().GetResult()) throw new InvalidOperationException("Pending activation was not adopted");
+                        if (File.Exists(config + ".bootstrap")) throw new InvalidOperationException("Consumed activation was not removed");
+                        if (!BridgeClient.Flag(client.Request("/api/companion/state").GetAwaiter().GetResult(), "paired")) throw new InvalidOperationException("Activation did not pair");
+                    }
+                }
+                File.WriteAllText(args[3], "PASS: protected launch handoff, activation, and configured-instance reactivation");
+                return 0;
+            }
+            catch (Exception issue)
+            {
+                File.WriteAllText(args[3], "FAIL: " + issue.GetType().Name + " " + issue.Message);
+                return 1;
             }
         }
 

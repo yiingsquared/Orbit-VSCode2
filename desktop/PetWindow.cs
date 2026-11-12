@@ -578,7 +578,12 @@ namespace OrbitDesktop
 
             try
             {
-                if (!bridge.Configured && !await bridge.ActivateInstall()) return;
+                if (await bridge.ActivateInstall())
+                {
+                    ResetCaptureState();
+                    SetCompanionHidden(false);
+                }
+                if (!bridge.Configured) return;
                 var state = await bridge.Request("/api/companion/state");
                 var command = BridgeClient.Control(state);
                 if (command != null)

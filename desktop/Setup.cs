@@ -92,11 +92,12 @@ namespace OrbitInstaller
                 var grant = OrbitDesktop.InstallBootstrap.ReadExecutable(Assembly.GetExecutingAssembly().Location);
                 if (grant != null) OrbitDesktop.InstallBootstrap.Save(OrbitDesktop.InstallBootstrap.DefaultGrantPath, grant);
                 CreateShortcut(directory);
+                OrbitDesktop.ProtocolRegistration.Register(Path.Combine(directory, "Orbit.exe"));
 
                 using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\OrbitCompanion"))
                 {
                     key.SetValue("DisplayName", "Orbit Companion");
-                    key.SetValue("DisplayVersion", "1.0.7");
+                    key.SetValue("DisplayVersion", "2.0.0");
                     key.SetValue("Publisher", "Orbit");
                     key.SetValue("InstallLocation", directory);
                     key.SetValue("DisplayIcon", Path.Combine(directory, "Orbit.exe"));

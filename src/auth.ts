@@ -1,4 +1,4 @@
-type OrbitUser = {
+export type OrbitUser = {
   id: string;
   email: string;
   name: string;
@@ -12,12 +12,39 @@ type AuthSession = {
 
 type EmailStep = { step: "signup" | "login" | "google"; email: string };
 
+export type AuthChangeMeta = {
+  source: "initial" | "signup" | "login" | "oauth" | "logout";
+  isNewAccount: boolean;
+};
+
+export type AuthOptions = {
+  onChange?: (user: OrbitUser | null, meta: AuthChangeMeta) => void;
+  beforeSignOut?: () => void | Promise<void>;
+  showAccountAfterOAuth?: boolean;
+};
+
+export type AuthController = {
+  ready: Promise<OrbitUser | null>;
+  getUser: () => OrbitUser | null;
+  open: () => void;
+  close: () => void;
+  signOut: () => Promise<void>;
+};
+
+const authControllers = new WeakMap<
+  HTMLDialogElement,
+  {
+    controller: AuthController;
+    configure: (options: AuthOptions) => void;
+  }
+>();
+
 const googleUnavailableMessage =
   "Google sign-in is temporarily unavailable. Continue with email or try again later.";
 
 // Local account dialog
 
-export function initAuth(): void {
+export function initAuth(options: AuthOptions = {}): AuthController {
   const trigger = document.getElementById(
     "rail-auth-button",
   ) as HTMLButtonElement | null;
@@ -25,7 +52,21 @@ export function initAuth(): void {
     "auth-dialog",
   ) as HTMLDialogElement | null;
 
-  if (!trigger || !dialog) return;
+  if (!trigger || !dialog)
+    return {
+      ready: Promise.resolve(null),
+      getUser: () => null,
+      open: () => {},
+      close: () => {},
+      signOut: async () => {},
+    };
+
+  const existing = authControllers.get(dialog);
+
+  if (existing) {
+    existing.configure(options);
+    return existing.controller;
+  }
 
   const authButton = trigger;
   const authDialog = dialog;
@@ -34,6 +75,8 @@ export function initAuth(): void {
   let busy = false;
   let generation = 0;
   let controller: AbortController | null = null;
+  let signingOut: Promise<void> | null = null;
+  let settings = options;
 
   function node<K extends keyof HTMLElementTagNameMap>(
     tag: K,
@@ -55,7 +98,7 @@ export function initAuth(): void {
     return element;
   }
 
-  function setUser(next: OrbitUser | null): void {
+  function setUser(next: OrbitUser | null, meta?: AuthChangeMeta): void {
     user = next;
     authButton.replaceChildren();
 
@@ -91,7 +134,19 @@ export function initAuth(): void {
       next ? `Your account: ${next.email}` : "Log in or sign up",
     );
     authButton.classList.toggle("is-signed-in", Boolean(next));
-    window.dispatchEvent(new CustomEvent("orbit:authchange", { detail: next }));
+    if (meta) {
+      window.dispatchEvent(
+        new CustomEvent("orbit:authchange", { detail: next }),
+      );
+
+      try {
+        Promise.resolve(settings.onChange?.(next, meta)).catch(() => {
+          window.dispatchEvent(new CustomEvent("orbit:authflowerror"));
+        });
+      } catch {
+        window.dispatchEvent(new CustomEvent("orbit:authflowerror"));
+      }
+    }
   }
 
   function showError(message: string, validation = false): void {
@@ -428,7 +483,7 @@ export function initAuth(): void {
           );
 
           field.value = "";
-          setUser(result.user);
+          setUser(result.user, { source: step, isNewAccount: signup });
           accountView(true);
         },
         signup ? "Creating account…" : "Logging in…",
@@ -490,33 +545,47 @@ export function initAuth(): void {
     account.append(avatar, details);
     done.addEventListener("click", () => authDialog.close());
     logout.addEventListener("click", () => {
-      void run(async (signal) => {
-        await post("logout", {}, signal);
-        setUser(null);
-        email = "";
-        emailView();
-      }, "Signing out…");
+      void signOut().catch((error) =>
+        showError(
+          error instanceof Error
+            ? error.message
+            : "Could not sign out. Please try again.",
+        ),
+      );
     });
     content.append(account, done, logout);
   }
 
   async function refreshSession(signal?: AbortSignal): Promise<AuthSession> {
-    const response = await fetch("/api/auth/session", {
-      credentials: "same-origin",
-      signal,
-    });
+    const abort = new AbortController();
+    const timeout = setTimeout(() => abort.abort(), 12000);
+    const cancel = () => abort.abort();
 
-    if (!response.ok)
-      throw new Error(
-        "Could not reach the account server. Keep npm start running, then try again.",
-      );
+    if (signal?.aborted) abort.abort();
+    else signal?.addEventListener("abort", cancel, { once: true });
 
-    const session = (await response.json()) as AuthSession;
-    setUser(session.user);
-    return session;
+    try {
+      const response = await fetch("/api/auth/session", {
+        credentials: "same-origin",
+        signal: abort.signal,
+      });
+
+      if (!response.ok)
+        throw new Error(
+          "Could not reach the account server. Keep npm start running, then try again.",
+        );
+
+      const session = (await response.json()) as AuthSession;
+
+      return { user: session.user || null };
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", cancel);
+    }
   }
 
   function open(): void {
+    if (signingOut) return;
     if (user) accountView();
     else emailView();
 
@@ -525,20 +594,76 @@ export function initAuth(): void {
     authDialog.querySelector<HTMLInputElement>("input")?.focus();
 
     void run(async (signal) => {
+      await ready;
+
+      if (signal.aborted) return;
+
       const before = user?.id;
       const session = await refreshSession(signal);
+
+      setUser(
+        session.user,
+        session.user?.id !== before
+          ? { source: "initial", isNewAccount: false }
+          : undefined,
+      );
 
       if (session.user && session.user.id !== before) accountView();
       else if (!session.user && before) emailView();
     });
   }
 
+  function close(): void {
+    if (authDialog.open) authDialog.close();
+  }
+
+  function signOut(): Promise<void> {
+    if (signingOut) return signingOut;
+
+    const operation = (async () => {
+      await ready;
+
+      if (busy)
+        throw new Error(
+          "Finish the current sign-in request before signing out.",
+        );
+
+      const request = new AbortController();
+
+      controller = request;
+      showError("");
+      setBusy(true, "Signing out…");
+
+      try {
+        await settings.beforeSignOut?.();
+        await post("logout", {}, request.signal);
+        email = "";
+        setUser(null, { source: "logout", isNewAccount: false });
+
+        if (authDialog.open) emailView();
+      } catch (error) {
+        window.dispatchEvent(new CustomEvent("orbit:authsignouterror"));
+        throw error;
+      } finally {
+        controller = null;
+        setBusy(false);
+      }
+    })();
+
+    signingOut = operation.finally(() => {
+      signingOut = null;
+    });
+    return signingOut;
+  }
+
   authButton.addEventListener("click", open);
   authDialog.addEventListener("close", () => {
-    generation += 1;
-    controller?.abort();
-    controller = null;
-    busy = false;
+    if (!signingOut) {
+      generation += 1;
+      controller?.abort();
+      controller = null;
+      busy = false;
+    }
 
     for (const password of authDialog.querySelectorAll<HTMLInputElement>(
       'input[name="password"]',
@@ -553,10 +678,12 @@ export function initAuth(): void {
   const returnUrl = new URL(window.location.href);
   const authResult = returnUrl.searchParams.get("auth");
   const authError = returnUrl.searchParams.get("auth_error");
+  const newAccount = returnUrl.searchParams.get("new_account") === "1";
 
-  if (authResult || authError) {
+  if (authResult || authError || returnUrl.searchParams.has("new_account")) {
     returnUrl.searchParams.delete("auth");
     returnUrl.searchParams.delete("auth_error");
+    returnUrl.searchParams.delete("new_account");
     window.history.replaceState(
       null,
       "",
@@ -566,11 +693,18 @@ export function initAuth(): void {
 
   setUser(null);
 
-  void refreshSession()
-    .then(() => {
-      if (authResult === "success" && user) {
+  const ready = refreshSession()
+    .then((session) => {
+      const oauth = authResult === "success" && Boolean(session.user);
+
+      setUser(session.user, {
+        source: oauth ? "oauth" : "initial",
+        isNewAccount: oauth && newAccount,
+      });
+
+      if (oauth && settings.showAccountAfterOAuth !== false) {
         accountView(true);
-        authDialog.showModal();
+        if (!authDialog.open) authDialog.showModal();
       } else if (authError) {
         const errors: Record<string, string> = {
           cancelled:
@@ -590,8 +724,10 @@ export function initAuth(): void {
         );
         authDialog.querySelector<HTMLInputElement>("input")?.focus();
       }
+      return user;
     })
     .catch(() => {
+      setUser(null, { source: "initial", isNewAccount: false });
       if (authResult || authError) {
         emailView();
         authDialog.showModal();
@@ -599,5 +735,22 @@ export function initAuth(): void {
           "Could not reach the account server. Keep npm start running, then try again.",
         );
       }
+      return null;
     });
+
+  const api: AuthController = {
+    ready,
+    getUser: () => user,
+    open,
+    close,
+    signOut,
+  };
+
+  authControllers.set(authDialog, {
+    controller: api,
+    configure: (next) => {
+      settings = { ...settings, ...next };
+    },
+  });
+  return api;
 }

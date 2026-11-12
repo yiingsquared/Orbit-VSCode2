@@ -5,6 +5,7 @@ import { projectRoot } from "./config.mjs";
 import { getProvider, isModelId } from "./providers.mjs";
 
 const pairingLifetime = 120000;
+const relaunchLifetime = 120000;
 const installLifetime = 86400000;
 const resumeLifetime = 30 * installLifetime;
 const selectionLifetime = 150000;
@@ -31,6 +32,7 @@ export function createCompanionState(options = {}) {
     pairings: new Map(),
     attempts: new Map(),
     clients: new Map(),
+    signedOutClients: new Set(),
     activeClient: null,
     events: [],
     sequence: 0,
@@ -577,6 +579,39 @@ export async function handleCompanion(request, response, options = {}) {
   }
 
   try {
+    // One-use local relaunch
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/companion/relaunch"
+    ) {
+      if (!web) {
+        json(response, 403, { message: "Relaunch the companion from Orbit." });
+        return;
+      }
+      await readJson(request);
+      if (!/^(431[0-9]|4320)$/.test(new URL(base).port)) {
+        json(response, 400, { message: "Start Orbit on a supported local port (4310–4320)." });
+        return;
+      }
+      state.hidden = false;
+      if (publicStatus(state).desktopConnected) {
+        json(response, 200, { connected: true });
+        return;
+      }
+      const ticket = issueInstallTicket(state, relaunchLifetime);
+      await savePeers(state);
+      const launch = new URL("orbit-companion://launch");
+      launch.searchParams.set("baseUrl", nativeBase(base));
+      launch.searchParams.set("ticket", ticket);
+      json(response, 200, {
+        connected: false,
+        url: launch.href,
+        expiresAt: state.clock() + relaunchLifetime,
+      });
+      return;
+    }
+
     // Installer handoff without manual pairing
 
     if (
@@ -751,6 +786,7 @@ export async function handleCompanion(request, response, options = {}) {
           json(response, 200, {
             paired: false,
             command: control.command,
+            ...(control.signOut ? { signOut: true } : {}),
             ...(control.reconnectTicket
               ? {
                   reconnect: {
@@ -803,6 +839,10 @@ export async function handleCompanion(request, response, options = {}) {
       }
 
       const body = await readJson(request);
+      if (state.peers.get(peer.hash) !== peer) {
+        json(response, 401, { message: "Pair the Orbit companion first." });
+        return;
+      }
       const reasons = [
         "active-tab-changed",
         "tab-navigation",
@@ -833,7 +873,16 @@ export async function handleCompanion(request, response, options = {}) {
         return;
       }
 
-      const context = acceptContext(state, await readJson(request), peer);
+      const body = await readJson(request);
+      if (state.peers.get(peer.hash) !== peer) {
+        json(response, 401, { message: "Pair the Orbit companion first." });
+        return;
+      }
+      if (state.paused) {
+        json(response, 200, { ok: true, stored: false, paused: true });
+        return;
+      }
+      const context = acceptContext(state, body, peer);
 
       json(response, 200, {
         ok: true,
@@ -853,6 +902,10 @@ export async function handleCompanion(request, response, options = {}) {
       }
 
       const body = await readJson(request);
+      if (state.peers.get(peer.hash) !== peer) {
+        json(response, 401, { message: "Pair the Windows companion first." });
+        return;
+      }
       const text = typeof body.text === "string" ? body.text.trim() : "";
 
       if (!text || text.length > 30000) {
@@ -935,6 +988,10 @@ export async function handleCompanion(request, response, options = {}) {
     ) {
       const body = await readJson(request);
 
+      if (state.signedOutClients.has(body.clientId)) {
+        json(response, 409, { message: "Sign in again to start a new Orbit companion session." });
+        return;
+      }
       if (
         !validClientId(body.clientId) ||
         !getProvider(body.provider) ||
@@ -1192,7 +1249,12 @@ export async function handleCompanion(request, response, options = {}) {
       if (body.kind && !["desktop", "extension"].includes(body.kind))
         throw new Error("Choose a companion type.");
 
-      if (command !== "quit" && (!body.kind || body.kind === "desktop")) {
+      if (body.signOut !== undefined && typeof body.signOut !== "boolean")
+        throw new Error("Choose a valid sign-out state.");
+      const signOut = command === "quit" && body.signOut === true;
+      if (signOut && body.kind) throw new Error("Sign out of all companion connections.");
+
+      if (signOut || (command !== "quit" && (!body.kind || body.kind === "desktop"))) {
         state.installTickets.clear();
         state.pendingControls.clear();
       }
@@ -1204,7 +1266,8 @@ export async function handleCompanion(request, response, options = {}) {
           state.pendingControls.set(hash, {
             command,
             expiresAt: state.clock() + pairingLifetime,
-            ...(command === "quit"
+            ...(signOut ? { signOut: true } : {}),
+            ...(command === "quit" && !signOut
               ? { reconnectTicket: issueInstallTicket(state, resumeLifetime) }
               : {}),
           });
@@ -1216,6 +1279,12 @@ export async function handleCompanion(request, response, options = {}) {
         state.hidden = false;
       }
       state.pairings.clear();
+
+      if (signOut) {
+        for (const clientId of state.clients.keys()) state.signedOutClients.add(clientId);
+        state.clients.clear();
+        state.activeClient = null;
+      }
 
       state.currentContext = null;
       state.contextHash = "";

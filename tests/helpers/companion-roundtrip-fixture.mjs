@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { watch } from "node:fs";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -29,6 +30,15 @@ export async function startCompanionRoundtripFixture(options = {}) {
   let watcher;
   let compileTimer;
   let compileQueue = Promise.resolve();
+  const loopbackFetch = globalThis.fetch;
+  const returningAccount = {
+    email: "orbit-qa-return@example.test",
+    password: randomBytes(32).toString("base64url"),
+  };
+  let returningAccountReady;
+  let desktopToken = "";
+  let desktopTimer;
+  let desktopSetup;
 
   const contentTypes = {
     ".html": "text/html; charset=utf-8",
@@ -90,6 +100,123 @@ export async function startCompanionRoundtripFixture(options = {}) {
       "Cache-Control": "no-store",
     });
     response.end(JSON.stringify(body));
+  }
+
+  // Synthetic account entry
+
+  async function authRequest(route, account, cookie = "") {
+    const result = await loopbackFetch(`${baseUrl}/api/auth/${route}`, {
+      method: "POST",
+      headers: {
+        Origin: baseUrl,
+        "Content-Type": "application/json",
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      body: JSON.stringify(account),
+      redirect: "manual",
+    });
+
+    if (!result.ok) throw new Error("Synthetic QA sign-in failed");
+
+    await result.json();
+    return result.headers.getSetCookie();
+  }
+
+  async function enterAccount(request, response, isNew) {
+    let cookies;
+
+    if (isNew) {
+      cookies = await authRequest(
+        "signup",
+        {
+          email: `orbit-qa-new-${randomBytes(10).toString("hex")}@example.test`,
+          password: randomBytes(32).toString("base64url"),
+        },
+        request.headers.cookie || "",
+      );
+    } else {
+      returningAccountReady ??= authRequest("signup", returningAccount).catch(
+        (error) => {
+          returningAccountReady = undefined;
+          throw error;
+        },
+      );
+      await returningAccountReady;
+      cookies = await authRequest(
+        "login",
+        returningAccount,
+        request.headers.cookie || "",
+      );
+    }
+
+    response.writeHead(302, {
+      "Set-Cookie": cookies,
+      Location: `/?auth=success${isNew ? "&new_account=1" : ""}`,
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+    });
+    response.end();
+  }
+
+  // In-memory desktop presence
+
+  async function desktopHeartbeat() {
+    if (!desktopToken) return false;
+
+    const result = await loopbackFetch(`${baseUrl}/api/companion/state`, {
+      headers: { Authorization: `Bearer ${desktopToken}` },
+    });
+
+    await result.json();
+
+    if (!result.ok) {
+      desktopToken = "";
+      clearInterval(desktopTimer);
+      return false;
+    }
+
+    return true;
+  }
+
+  async function desktopOnline() {
+    if (await desktopHeartbeat()) return;
+
+    const codeResponse = await loopbackFetch(
+      `${baseUrl}/api/companion/pair-code`,
+      {
+        method: "POST",
+        headers: { Origin: baseUrl, "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+    const pairing = await codeResponse.json();
+
+    if (!codeResponse.ok) throw new Error("Synthetic QA pairing failed");
+
+    const pairedResponse = await loopbackFetch(
+      `${baseUrl}/api/companion/pair`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: pairing.code,
+          kind: "desktop",
+          name: "Isolated QA desktop presence",
+        }),
+      },
+    );
+    const paired = await pairedResponse.json();
+
+    if (!pairedResponse.ok || typeof paired.token !== "string")
+      throw new Error("Synthetic QA pairing failed");
+
+    desktopToken = paired.token;
+    await desktopHeartbeat();
+    clearInterval(desktopTimer);
+    desktopTimer = setInterval(() => {
+      void desktopHeartbeat().catch(() => {});
+    }, 5000);
+    desktopTimer.unref();
   }
 
   async function staticFile(url, response) {
@@ -174,7 +301,28 @@ export async function startCompanionRoundtripFixture(options = {}) {
 
       const url = new URL(request.url, baseUrl);
 
-      if (url.pathname === "/__qa/proof") {
+      if (
+        request.method === "GET" &&
+        ["/__qa/entry/new", "/__qa/entry/return"].includes(url.pathname)
+      ) {
+        await enterAccount(
+          request,
+          response,
+          url.pathname === "/__qa/entry/new",
+        );
+      } else if (
+        request.method === "GET" &&
+        url.pathname === "/__qa/desktop-online"
+      ) {
+        desktopSetup ??= desktopOnline().finally(() => {
+          desktopSetup = undefined;
+        });
+        await desktopSetup;
+        sendJson(response, 200, {
+          synthetic: true,
+          desktopConnected: true,
+        });
+      } else if (url.pathname === "/__qa/proof") {
         sendJson(response, 200, {
           ...proof,
           pairedDesktop: [...state.peers.values()].filter(
@@ -229,6 +377,8 @@ export async function startCompanionRoundtripFixture(options = {}) {
     proof,
     async close() {
       clearTimeout(compileTimer);
+      clearInterval(desktopTimer);
+      desktopToken = "";
       watcher?.close();
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));

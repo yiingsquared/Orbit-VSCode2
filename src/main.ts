@@ -4,11 +4,14 @@ import {
   loadNotes,
   readStored,
   writeStored,
+  setStorageAccount,
 } from "./store.js";
 import type { ProviderId, Chat, Message, Attachment } from "./store.js";
 import { streamChat } from "./stream.js";
 import { renderMarkdown } from "./markdown.js";
 import { initAuth } from "./auth.js";
+import { initIntro } from "./intro.js";
+import { initOnboarding } from "./onboarding.js";
 import { initCompanionDemo } from "./demo.js";
 import { initWelcomeCat } from "./welcome-cat.js";
 import {
@@ -23,6 +26,7 @@ import {
   notifyCompanionSelection,
   publishCompanionReply,
   markCompanionReplyRead,
+  resetCompanionSession,
 } from "./companion.js";
 import type { CompanionContext } from "./companion.js";
 
@@ -76,6 +80,10 @@ let attachments: Attachment[] = [];
 let toastTimer: ReturnType<typeof setTimeout>;
 let storageWarned = false;
 let sidebar: ReturnType<typeof initChatSidebar> | null = null;
+let accountId: string | null = null;
+let accountGeneration = 0;
+let workspaceEnabled = false;
+let signingOut = false;
 const readReplies = new Set<string>();
 
 memoryToggle.checked = readStored("orbit.includeMemory.v1", true) === true;
@@ -306,7 +314,7 @@ function setProvider(id: ProviderId, chat: Chat | null = null): void {
   renderHistory();
   renderConversation();
   resizeInput();
-  void loadCatalog(id);
+  if (workspaceEnabled) void loadCatalog(id);
   notifyCompanionSelection();
 }
 
@@ -583,6 +591,7 @@ async function sendRequest(
 
   const abort = new AbortController();
   const request: ActiveRequest = { abort, chat, message: assistant };
+  const requestGeneration = accountGeneration;
   const index = chat.messages.indexOf(assistant);
   const preceding = chat.messages.slice(0, index);
   const history = preceding
@@ -634,6 +643,8 @@ async function sendRequest(
       });
     }
 
+    abort.signal.throwIfAborted();
+
     await streamChat(
       {
         provider: chat.provider,
@@ -649,13 +660,20 @@ async function sendRequest(
       },
       abort.signal,
       (event) => {
-        if (event.type === "delta" && event.text) {
+        if (
+          requestGeneration === accountGeneration &&
+          event.type === "delta" &&
+          event.text
+        ) {
           assistant.text += event.text;
 
           if (currentChat === chat) updateAssistant(article, assistant);
         }
       },
     );
+
+    abort.signal.throwIfAborted();
+    if (requestGeneration !== accountGeneration) return;
 
     assistant.state = "complete";
     assistant.createdAt = Date.now();
@@ -673,7 +691,7 @@ async function sendRequest(
         : "Unable to connect to the provider.";
   } finally {
     chat.updated = Date.now();
-    persistChats();
+    if (requestGeneration === accountGeneration) persistChats();
 
     if (activeRequest === request) activeRequest = null;
 
@@ -691,6 +709,7 @@ async function submitMessage(
   text: string,
   context?: CompanionContext | null,
 ): Promise<Message | undefined> {
+  if (!workspaceEnabled || signingOut) return;
   if (activeRequest)
     throw new Error("Orbit is finishing the previous response.");
 
@@ -916,6 +935,7 @@ element<HTMLInputElement>("attachment-input").addEventListener(
   "change",
   async (event) => {
     const field = event.target as HTMLInputElement;
+    const generation = accountGeneration;
 
     for (const file of Array.from(field.files || [])) {
       if (attachments.length >= 3) {
@@ -933,12 +953,17 @@ element<HTMLInputElement>("attachment-input").addEventListener(
       }
 
       try {
+        const text = await file.text();
+
+        if (generation !== accountGeneration || !workspaceEnabled) break;
+
         attachments.push({
           name: file.name.slice(0, 180),
-          text: await file.text(),
+          text,
         });
       } catch {
-        toast(`Could not read ${file.name}.`);
+        if (generation === accountGeneration)
+          toast(`Could not read ${file.name}.`);
       }
     }
 
@@ -1056,8 +1081,8 @@ for (const button of document.querySelectorAll("[data-open-memory]"))
     showDialog("memory-dialog");
   });
 
-for (const button of document.querySelectorAll("[data-get-started]"))
-  button.addEventListener("click", () => showDialog("companion-dialog"));
+for (const button of document.querySelectorAll("[data-open-companion]"))
+  button.addEventListener("click", () => onboarding.openCompanion());
 for (const button of document.querySelectorAll("[data-close-dialog]"))
   button.addEventListener("click", () => button.closest("dialog")?.close());
 
@@ -1131,22 +1156,34 @@ element("voice-button").addEventListener("click", () => {
   }
 
   const session = new Recognition();
+  const generation = accountGeneration;
 
   speech = session;
   session.lang = navigator.language || "en-US";
   session.interimResults = false;
   session.onresult = (event) => {
+    if (
+      speech !== session ||
+      generation !== accountGeneration ||
+      !workspaceEnabled
+    )
+      return;
+
     input.value = `${input.value} ${event.results[0][0].transcript}`
       .trim()
       .slice(0, 30000);
     resizeInput();
     input.focus();
   };
-  session.onerror = () =>
-    toast(
-      "Voice input could not start. Check your browser microphone permission.",
-    );
+  session.onerror = () => {
+    if (speech === session && generation === accountGeneration)
+      toast(
+        "Voice input could not start. Check your browser microphone permission.",
+      );
+  };
   session.onend = () => {
+    if (speech !== session) return;
+
     speech = null;
     element("voice-button").classList.remove("is-listening");
   };
@@ -1192,7 +1229,6 @@ sidebar = initChatSidebar({
   onShare: (id) => shareChat(chats.find((chat) => chat.id === id) || null),
   onError: toast,
 });
-initAuth();
 initCompanionDemo();
 initWelcomeCat();
 renderMemory();
@@ -1200,7 +1236,100 @@ setProvider("openai");
 updateSendButton();
 new ResizeObserver(resizeComposer).observe(element("message-form"));
 renderProviderAvailability();
+
+// Signed-in workspace lifecycle
+
+const onboarding = initOnboarding({
+  getAuth: () => auth,
+  onStageChange: (stage) => {
+    workspaceEnabled = stage === "workspace";
+    notifyCompanionSelection();
+
+    if (workspaceEnabled) {
+      setProvider(provider, currentChat);
+      renderMemory();
+      requestAnimationFrame(resizeComposer);
+    }
+  },
+  onInstalled: () =>
+    toast(
+      "Download started. Run Orbit-Setup.exe to bring your companion to life.",
+    ),
+});
+
+initIntro({ onGetStarted: () => void onboarding.getStarted() });
+
+const auth = initAuth({
+  showAccountAfterOAuth: false,
+  onChange: (user, meta) => {
+    signingOut = false;
+
+    if (accountId !== (user?.id || null)) {
+      accountGeneration += 1;
+      activeRequest?.abort.abort();
+      activeRequest = null;
+      stopMessageSpeech();
+      speech?.stop();
+      readReplies.clear();
+      accountId = user?.id || null;
+      setStorageAccount(accountId, !meta.isNewAccount);
+      chats.splice(0, chats.length, ...loadChats());
+      notes.splice(0, notes.length, ...loadNotes());
+      memoryToggle.checked =
+        readStored("orbit.includeMemory.v1", true) === true;
+      currentChat = null;
+      resetCompanionSession();
+      renderMemory();
+      setProvider("openai");
+    }
+
+    onboarding.authChanged(user, meta);
+    if (meta.source === "logout") auth.close();
+  },
+  beforeSignOut: async () => {
+    accountGeneration += 1;
+    signingOut = true;
+    workspaceEnabled = false;
+
+    if (activeRequest) {
+      activeRequest.abort.abort();
+      activeRequest.message.state = "stopped";
+      persistChats();
+    }
+
+    stopMessageSpeech();
+    speech?.stop();
+    resetCompanionSession();
+
+    try {
+      const response = await fetch("/api/companion/quit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signOut: true }),
+        signal: AbortSignal.timeout(12000),
+      });
+
+      if (!response.ok)
+        throw new Error(
+          "Could not quit your companion. Try signing out again.",
+        );
+    } catch (error) {
+      signingOut = false;
+      workspaceEnabled = onboarding.getStage() === "workspace";
+      notifyCompanionSelection();
+      throw error;
+    }
+  },
+});
+
+window.addEventListener("orbit:authsignouterror", () => {
+  signingOut = false;
+  workspaceEnabled = onboarding.getStage() === "workspace";
+  notifyCompanionSelection();
+});
+
 initCompanion({
+  enabled: () => workspaceEnabled && !signingOut,
   getSelection: () => ({ provider, model: selectedModel() }),
   isBusy: () => Boolean(activeRequest),
   onMessage: async (message) => {

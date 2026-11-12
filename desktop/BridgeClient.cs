@@ -112,6 +112,7 @@ namespace OrbitDesktop
         internal async Task<bool> ActivateInstall()
         {
             var grantPath = configPath + ".bootstrap";
+            if (!File.Exists(grantPath)) return false;
             var grant = InstallBootstrap.Load(grantPath);
             if (grant == null) return false;
             var address = Text(grant, "baseUrl").TrimEnd('/');
@@ -121,17 +122,17 @@ namespace OrbitDesktop
                 var data = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync());
                 if (!response.IsSuccessStatusCode)
                 {
-                    if ((int)response.StatusCode == 401) File.Delete(grantPath);
+                    if ((int)response.StatusCode == 401) InstallBootstrap.Remove(grantPath, grant);
                     throw new BridgeRequestException((int)response.StatusCode, Text(data, "message") ?? "Run the installer downloaded from Orbit again");
                 }
                 var nextToken = Text(data, "token");
                 var returnedAddress = Text(data, "baseUrl");
-                if (!Regex.IsMatch(nextToken ?? "", @"^[A-Za-z0-9_-]{43}$") || !ValidAddress(returnedAddress)
+                if (!Regex.IsMatch(nextToken ?? "", @"\A[A-Za-z0-9_-]{43}\z") || !ValidAddress(returnedAddress)
                     || !String.Equals(address, returnedAddress.TrimEnd('/'), StringComparison.Ordinal)) throw new InvalidOperationException("Invalid Orbit activation response");
                 token = nextToken;
                 BaseUrl = address;
                 Save();
-                File.Delete(grantPath);
+                InstallBootstrap.Remove(grantPath, grant);
                 return true;
             }
         }
@@ -140,8 +141,9 @@ namespace OrbitDesktop
         {
             var command = Control(state);
             if (command == null) return;
+            if (Flag(state, "signOut")) InstallBootstrap.Remove(configPath + ".bootstrap");
             object reconnect;
-            if (command == "quit" && state.TryGetValue("reconnect", out reconnect) && reconnect is Dictionary<string, object>)
+            if (command == "quit" && !Flag(state, "signOut") && state.TryGetValue("reconnect", out reconnect) && reconnect is Dictionary<string, object>)
                 InstallBootstrap.Save(configPath + ".bootstrap", (Dictionary<string, object>)reconnect);
             Forget();
         }

@@ -243,3 +243,75 @@ test("offline publication remains queued for a later transport connection", asyn
   notifier.disconnect();
   assert.deepEqual(calls, ["reply-published"]);
 });
+
+test("reset clears queued notifications and previous read receipts before a new client connects", async () => {
+  let saved = "";
+  const storage = {
+    getItem: () => saved,
+    setItem: (_key, value) => {
+      saved = value;
+    },
+  };
+  const notifier = createCompanionReplyNotifier(storage);
+
+  await notifier.read(identity);
+  await notifier.publish({ ...identity, text: "Old session reply" });
+  notifier.reset();
+
+  const calls = [];
+
+  notifier.connect(async (route) => {
+    calls.push(route);
+  }, "new-client-123");
+  await notifier.flush();
+  notifier.disconnect();
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(JSON.parse(saved), { entries: [], read: [], published: [] });
+});
+
+test("late completion from a reset transport cannot repopulate notification state or block a fresh client", async () => {
+  let release;
+  let saved = "";
+  const barrier = new Promise((resolve) => {
+    release = resolve;
+  });
+  const notifier = createCompanionReplyNotifier({
+    getItem: () => saved,
+    setItem: (_key, value) => {
+      saved = value;
+    },
+  });
+
+  notifier.connect(async () => {
+    await barrier;
+  }, clientId);
+  const old = notifier.publish({ ...identity, text: "In-flight old session" });
+
+  notifier.reset();
+
+  const calls = [];
+  const fresh = { ...identity, revision: "attempt-new-123" };
+
+  notifier.connect(async (route, body) => {
+    calls.push({ route, body });
+  }, "new-client-123");
+  await notifier.publish({ ...fresh, text: "Fresh session reply" });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.clientId, "new-client-123");
+  assert.equal(calls[0].body.revision, fresh.revision);
+
+  release();
+  await old;
+  await notifier.flush();
+  notifier.disconnect();
+
+  assert.equal(calls.length, 1);
+  assert.equal(
+    JSON.parse(saved).published.some((entry) =>
+      entry.includes(identity.revision),
+    ),
+    false,
+  );
+});

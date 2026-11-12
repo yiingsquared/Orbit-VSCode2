@@ -1,1 +1,1 @@
-PASS: fixed home, elastic release and return, latched detachment, immediate hover, exact cat silhouette, hidden-window recovery, protected installation, context heartbeat, focus, send guard, draft recovery, occlusion, and website controls
+PASS: fixed home, elastic release and return, latched detachment, immediate hover, exact cat silhouette, hidden-window recovery, protected installation, strict relaunch URL, quoted protocol ownership, context heartbeat, focus, send guard, draft recovery, occlusion, and website controls

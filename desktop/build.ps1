@@ -26,7 +26,7 @@ $orbitReferences += @(
   'UIAutomationClient.dll', 'UIAutomationTypes.dll'
 ) | ForEach-Object { '/reference:' + (Join-Path $orbitWpf $_) }
 
-$orbitSources = @('AssemblyInfo.cs', 'Program.cs', 'NativeMethods.cs', 'BridgeClient.cs', 'InstallBootstrap.cs', 'ContextReader.cs', 'PetWindow.cs', 'HomePull.cs', 'QaWindow.cs', 'AttachmentPolicy.cs', 'InteractionQaWindow.cs') | ForEach-Object { Join-Path $orbitRoot $_ }
+$orbitSources = @('AssemblyInfo.cs', 'Program.cs', 'NativeMethods.cs', 'BridgeClient.cs', 'InstallBootstrap.cs', 'ProtocolRegistration.cs', 'ContextReader.cs', 'PetWindow.cs', 'HomePull.cs', 'QaWindow.cs', 'AttachmentPolicy.cs', 'InteractionQaWindow.cs') | ForEach-Object { Join-Path $orbitRoot $_ }
 
 & $orbitCompiler /nologo /optimize+ /target:winexe /platform:anycpu "/win32manifest:$orbitRoot\app.manifest" "/out:$orbitRelease\Orbit.exe" @orbitReferences @orbitSources
 if ($LASTEXITCODE -ne 0) { throw 'Companion compilation failed' }
@@ -35,10 +35,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Companion compilation failed' }
 
 $orbitSetupReferences = @('/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Security.dll', '/reference:System.Web.Extensions.dll', '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll')
 
-& $orbitCompiler /nologo /optimize+ /target:winexe /platform:anycpu "/win32manifest:$orbitRoot\app.manifest" "/out:$orbitRelease\Uninstall.exe" @orbitSetupReferences "$orbitRoot\AssemblyInfo.cs" "$orbitRoot\Uninstall.cs"
+& $orbitCompiler /nologo /optimize+ /target:winexe /platform:anycpu "/win32manifest:$orbitRoot\app.manifest" "/out:$orbitRelease\Uninstall.exe" @orbitSetupReferences "$orbitRoot\AssemblyInfo.cs" "$orbitRoot\ProtocolRegistration.cs" "$orbitRoot\Uninstall.cs"
 if ($LASTEXITCODE -ne 0) { throw 'Uninstaller compilation failed' }
 
-& $orbitCompiler /nologo /optimize+ /target:winexe /platform:anycpu "/win32manifest:$orbitRoot\app.manifest" "/out:$orbitRelease\Orbit-Setup.exe" @orbitSetupReferences "/resource:$orbitRelease\Orbit.exe,OrbitPayload" "/resource:$orbitRelease\Uninstall.exe,OrbitUninstaller" "$orbitRoot\AssemblyInfo.cs" "$orbitRoot\InstallBootstrap.cs" "$orbitRoot\Setup.cs"
+& $orbitCompiler /nologo /optimize+ /target:winexe /platform:anycpu "/win32manifest:$orbitRoot\app.manifest" "/out:$orbitRelease\Orbit-Setup.exe" @orbitSetupReferences "/resource:$orbitRelease\Orbit.exe,OrbitPayload" "/resource:$orbitRelease\Uninstall.exe,OrbitUninstaller" "$orbitRoot\AssemblyInfo.cs" "$orbitRoot\InstallBootstrap.cs" "$orbitRoot\ProtocolRegistration.cs" "$orbitRoot\Setup.cs"
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
 
 # Build fingerprints
@@ -55,7 +55,7 @@ finally {
   $orbitHashAlgorithm.Dispose()
 }
 
-$orbitMetadata = '{"filename":"Orbit-Setup.exe","size":' + $orbitSetup.Length + ',"sha256":"' + $orbitDigest + '","version":"1.0.7","architecture":"anycpu","platform":"windows"}'
+$orbitMetadata = '{"filename":"Orbit-Setup.exe","size":' + $orbitSetup.Length + ',"sha256":"' + $orbitDigest + '","version":"2.0.0","architecture":"anycpu","platform":"windows"}'
 [IO.File]::WriteAllText((Join-Path $orbitRelease 'installer.json'), $orbitMetadata, (New-Object Text.UTF8Encoding $false))
 
 Write-Output "Built companion and installer in $orbitRelease"

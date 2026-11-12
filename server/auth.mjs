@@ -561,6 +561,7 @@ async function googleCallback(
 
     const email = normalizeEmail(info.email);
     let user = store.byGoogleSub(info.sub);
+    let isNewAccount = false;
 
     if (!user) {
       if (store.byEmail(email)) {
@@ -576,10 +577,14 @@ async function googleCallback(
         google_sub: info.sub,
         email_verified: true,
       });
+      isNewAccount = true;
     }
 
     startSession(request, response, store, user);
-    redirect(response, "/?auth=success");
+    redirect(
+      response,
+      isNewAccount ? "/?auth=success&new_account=1" : "/?auth=success",
+    );
   } catch {
     redirect(response, "/?auth_error=google_failed");
   }

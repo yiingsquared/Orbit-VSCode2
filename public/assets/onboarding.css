@@ -1,0 +1,62 @@
+/* Companion entry */
+
+.onboarding-description {
+  max-width: 360px;
+  margin: 12px auto 0;
+  color: #777782;
+  font-size: 14px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.onboarding-relaunch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.onboarding-relaunch svg {
+  width: 18px;
+  height: 18px;
+}
+
+.onboarding-relaunch:disabled svg {
+  animation: onboarding-spin 1.5s linear infinite;
+}
+
+.onboarding-fallback {
+  display: block;
+  margin: 16px auto 0;
+  padding: 8px;
+  color: #40404b;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.onboarding-status {
+  margin: 16px auto 0;
+  max-width: 350px;
+  color: #7b7b87;
+  font-size: 12px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+.companion-dialog[data-onboarding] #companion-controls,
+.companion-dialog[data-onboarding] #companion-status {
+  display: none !important;
+}
+
+@keyframes onboarding-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-relaunch:disabled svg {
+    animation: none;
+  }
+}

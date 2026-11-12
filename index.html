@@ -23,13 +23,17 @@
     <link rel="stylesheet" href="/assets/chat-sidebar.css" />
     <link rel="stylesheet" href="/assets/message-actions.css" />
     <link rel="stylesheet" href="/assets/welcome-cat.css" />
+    <link rel="stylesheet" href="/assets/intro.css" />
+    <link rel="stylesheet" href="/assets/onboarding.css" />
     <script type="module" src="/generated/main.js"></script>
   </head>
 
   <body>
     <a class="skip-link" href="#message-input">Skip to message</a>
 
-    <div class="orbit-app" id="orbit-app" data-provider="openai">
+    <main id="intro-page" class="intro-page" hidden></main>
+
+    <div class="orbit-app" id="orbit-app" data-provider="openai" hidden>
       <!-- Orbit model rail -->
       <aside class="model-rail" aria-label="Choose your AI">
         <button
@@ -220,8 +224,8 @@
           >
             Share <svg><use href="#i-share" /></svg>
           </button>
-          <button class="get-started-button" type="button" data-get-started>
-            Get Started <svg><use href="#i-spark" /></svg>
+          <button class="get-started-button" type="button" data-open-companion>
+            Companion <svg><use href="#i-spark" /></svg>
           </button>
         </div>
       </header>
@@ -417,6 +421,11 @@
           <img src="/assets/orbit-cat.svg" alt="" /> Orbit Companion
         </div>
         <h2 id="companion-title">A little closer to your work.</h2>
+        <p
+          class="onboarding-description"
+          id="onboarding-description"
+          hidden
+        ></p>
         <svg
           class="companion-demo"
           id="companion-demo"
@@ -484,6 +493,31 @@
           </g>
           <path id="demo-cursor" opacity="0" d="M0 0v20l5-5 5 9 4-2-5-9h8Z" />
         </svg>
+        <button
+          class="dialog-primary onboarding-relaunch"
+          id="relaunch-companion"
+          type="button"
+          hidden
+        >
+          <span>Relaunch</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 10a8 8 0 1 0-1 7M20 4v6h-6" />
+          </svg>
+        </button>
+        <button
+          class="onboarding-fallback"
+          id="install-companion-fallback"
+          type="button"
+          hidden
+        >
+          Install on this computer
+        </button>
+        <p
+          class="onboarding-status"
+          id="onboarding-status"
+          role="status"
+          hidden
+        ></p>
         <a
           class="dialog-primary download-button"
           id="download-companion"
